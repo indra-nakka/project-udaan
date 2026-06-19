@@ -15,17 +15,21 @@ public class DroneFlightController : NetworkBehaviour
     public float hoverDampening = 15f; 
 
     private Rigidbody rb;
+    private PlayerEconomy playerEconomy;
+    private float activeSpeedModifier = 1.0f; // Default state: 100% speed
     private float pitchInput;
     private float yawInput;
     private float thrustInput;
 
-    void Start()
+    void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        playerEconomy = GetComponent<PlayerEconomy>();
     }
 
     public override void OnNetworkSpawn()
     {
+        base.OnNetworkSpawn();
         // This runs the exact millisecond the drone connects to the server
         if (IsOwner)
         {
@@ -35,7 +39,30 @@ public class DroneFlightController : NetworkBehaviour
             
             // Drop them from 3 meters in the air so they gracefully hover down
             transform.position = new Vector3(randomX, 3f, randomZ);
+
+            // Subscribe to our wallet's speed upgrade hook safely on spawn
+            if (playerEconomy != null)
+            {
+                playerEconomy.OnSpeedModifierUpgraded += HandleSpeedUpgraded;
+            }
         }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        // Always unsubscribe on network teardown to prevent memory leaks!
+        if (playerEconomy != null)
+        {
+            playerEconomy.OnSpeedModifierUpgraded -= HandleSpeedUpgraded;
+        }
+        base.OnNetworkDespawn();
+    }
+
+    private void HandleSpeedUpgraded(float newMultiplier)
+    {
+        // Scale our active modifier (e.g. 1.0f -> 1.15f)
+        activeSpeedModifier *= newMultiplier; 
+        Debug.Log($"Flight Controller received upgrade! New speed modifier: {activeSpeedModifier}");
     }
 
     void Update()
@@ -112,7 +139,7 @@ public class DroneFlightController : NetworkBehaviour
         // THRUST (Moving Forward/Backwards relative to where the nose is pointing)
         if (Mathf.Abs(thrustInput) > 0.1f)
         {
-            rb.AddRelativeForce(Vector3.forward * thrustInput * forwardThrust, ForceMode.Acceleration);
+            rb.AddRelativeForce(Vector3.forward * thrustInput * forwardThrust * activeSpeedModifier, ForceMode.Acceleration);
         }
     }
 }
