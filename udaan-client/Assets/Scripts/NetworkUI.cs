@@ -5,6 +5,7 @@ public class NetworkUI : MonoBehaviour
 {
     void OnGUI()
     {
+        /* TEMPORARILY DISABLED (DRONE-06)
         // Start drawing UI in the top-left corner
         GUILayout.BeginArea(new Rect(10, 10, 300, 300));
         
@@ -26,5 +27,6 @@ public class NetworkUI : MonoBehaviour
         }
         
         GUILayout.EndArea();
+        */
     }
 }

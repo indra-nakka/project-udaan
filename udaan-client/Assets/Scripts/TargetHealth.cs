@@ -4,6 +4,7 @@ using Unity.Netcode;
 public class TargetHealth : NetworkBehaviour
 {
     [Header("Health Settings")]
+    public DroneClassData defaultClassData;
     public float maxHealth = 100f;
     private float currentHealth;
 
@@ -13,7 +14,18 @@ public class TargetHealth : NetworkBehaviour
 
     void Start()
     {
-        currentHealth = maxHealth;
+        InitializeClassData(defaultClassData);
+    }
+
+    public void InitializeClassData(DroneClassData classData)
+    {
+        defaultClassData = classData;
+        if (defaultClassData != null)
+        {
+            maxHealth = defaultClassData.maxHealth;
+            currentHealth = maxHealth;
+            Debug.Log($"Target Health dynamically loaded class max HP: {maxHealth}");
+        }
     }
 
     // This function will be called by the Nerf Dart when it hits
@@ -69,6 +81,15 @@ public class TargetHealth : NetworkBehaviour
         }
 
         // We will replace this with a cool confetti particle effect later
-        Destroy(gameObject); 
+        if (IsServer)
+        {
+            // Refill health
+            currentHealth = maxHealth;
+            // Reroute to a random sandbox position
+            float randomX = UnityEngine.Random.Range(-20f, 20f);
+            float randomZ = UnityEngine.Random.Range(-20f, 20f);
+            transform.position = new Vector3(randomX, 2f, randomZ);
+            Debug.Log($"[SERVER] Target Dummy popped! Relocating to synchronized coordinates: {transform.position}");
+        }
     }
 }

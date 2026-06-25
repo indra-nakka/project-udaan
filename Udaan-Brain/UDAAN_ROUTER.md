@@ -12,6 +12,8 @@
 - Debugging a crash? → [[rubrics/debugging]], [[context/gotchas]]
 - Designing a new system? → [[rubrics/bfs-dfs]], [[decisions/_index]]
 - Before proposing any architectural change? → Check [[architecture/invariants]] first.
+- Variable Mapping & Network Scope Registry → [[architecture/glossary]]
+- Core Input Mapping & Gamepad Schema → [[architecture/controller-map]]
 
 ## Write Every Session (Post-Session Hook)
 - Create a new session log in `sessions/YYYY-MM-DD-HHMM.md` using the template [[rubrics/session-template]].
@@ -25,3 +27,5 @@
 - **Stop Search Logic:** Start unknown tasks with 10 minutes of BFS scanning. If you open >5 files looking for an answer, STOP. Switch to BFS or ask the user for guidance[cite: 3].
 - **Uncertainty Logging:** If you don't know something, log it in `context/assumptions.md` with `confidence: low`[cite: 3]. Do not guess or hallucinate code[cite: 3].
 - **Verification:** Before claiming a feature works, run the verification checklist found in [[rubrics/verification]][cite: 3].
+- BEFORE implementing or modifying any script variable, you MUST cross-reference [[architecture/glossary]] to prevent naming conflicts, structural data drift, or authority overlaps.
+- AFTER creating, modifying, or deleting any Core Variable or NetworkVariable field, you MUST immediately document or update its Type, Scope, and Authority matrix directly inside [[architecture/glossary]].

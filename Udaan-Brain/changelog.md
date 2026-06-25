@@ -1,5 +1,21 @@
 # Changelog
 
+- 2026-06-26 | DroneFlightController.cs | Stripped legacy keyboard inputs to strictly enforce DRONE-10 definitive gamepad axis blueprint mappings | session-021
+- 2026-06-26 | architecture/controller-map.md, UDAAN_ROUTER.md | Migrated gamepad schema and aligned Core Input structural map inside UDAAN_ROUTER.md | session-020
+- 2026-06-26 | DroneFlightController.cs | Rewrote flight controller to execute the Ace Combat FPS Hybrid flight engine and mapped unified fallback schemas | session-019
+- 2026-06-26 | ClassSelectionUI.cs | Added and bound explicit Host/Client UI buttons to flush cached class selection | session-018
+- 2026-06-26 | ClassSelectionUI.cs, DroneWeapon.cs, DroneFlightController.cs | Restored Xbox input profiles and refactored UI routing for explicit Host/Client connections | session-017
+- 2026-06-26 | ClassSelectionUI.cs | HOTFIX: Refactored selection buttons to implicitly start the network host and wait for initialization before sending RPC | session-016
+- 2026-06-26 | DroneWeapon.cs, NetworkUI.cs | Suppressed mouse weapon firing and removed legacy OnGUI network buttons to clean up flight calibration sandbox | session-015
+- 2026-06-26 | DroneFlightController.cs, TargetHealth.cs | Implemented sandbox respawn loop for Target Dummy and enhanced network validation logging | session-014
+- 2026-06-26 | ClassSelectionUI.cs | Created ClassSelectionUI to bind player interface buttons to the DroneClassSpawner RPCs | session-013
+- 2026-06-26 | DroneFlightController.cs, TargetHealth.cs, DroneClassSpawner.cs | HOTFIX: Updated InitializeClassData signature to accept DroneClassData, resolving CS1061. Documented defaultClassData in glossary. | session-012
+- 2026-06-26 | DroneClassSpawner.cs | Created Multi-Class Selection Network Spawner using ServerRpc and registered availableClasses in glossary | session-011
+- 2026-06-26 | UDAAN_ROUTER.md | Enforced Glossary Maintenance Rules to strictly govern future variable modifications | session-010
+- 2026-06-26 | architecture/glossary.md | Created Architecture Data Glossary to track active variables in core gameplay loops | session-009
+- 2026-06-26 | DroneFlightController.cs, TargetHealth.cs | Hooked up DroneClassData to dynamically overwrite flight physics and max health at runtime | session-008
+- 2026-06-26 | DroneClassData.cs | Created DroneClassData ScriptableObject blueprint template with health and physics parameters | session-007
+- 2026-06-19 | PlayerHUDController.cs | Implemented dynamic runtime linkage via HUD_ScrapText tags, separating scene-space display meshes from network prefab assets | session-006
 - 2026-06-19 10:45 | ECON-05: Created PlayerHUDController to display player's scrap count dynamically with defensive checks.
 - 2026-06-19 00:50 | ECON-04: Implemented DroneUpgradeData ScriptableObject and TryPurchaseUpgrade logic in PlayerEconomy with an OnSpeedModifierUpgraded event hook.
 - 2026-06-19 00:48 | ECON-03: Created PlayerEconomy script to manage player scrap count via trigger collisions, and added hovering/spinning animations to ScrapItem.

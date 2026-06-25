@@ -2,28 +2,41 @@ using UnityEngine;
 using Unity.Netcode;
 using TMPro;
 
-[RequireComponent(typeof(PlayerEconomy))]
 public class PlayerHUDController : NetworkBehaviour
 {
-    [Header("UI References")]
-    public TextMeshProUGUI scrapTextDisplay;
-    
     private PlayerEconomy playerEconomy;
+    private TextMeshProUGUI scrapTextDisplay;
 
-    private void Awake()
+    void Awake()
     {
         playerEconomy = GetComponent<PlayerEconomy>();
     }
 
-    private void Update()
+    public override void OnNetworkSpawn()
     {
+        base.OnNetworkSpawn();
+        
+        // Safety lock: Only find and update the HUD for the local player driving this drone!
         if (!IsOwner) return;
 
-        // Defensive check against null references during async multiplayer client spawns
-        if (playerEconomy != null && scrapTextDisplay != null)
+        // Hunt down the UI element in the scene dynamically using our custom tag
+        GameObject uiTarget = GameObject.FindWithTag("HUD_ScrapText");
+        if (uiTarget != null)
         {
-            int currentValue = playerEconomy.scrapCount.Value;
-            scrapTextDisplay.text = $"Scrap: {currentValue}";
+            scrapTextDisplay = uiTarget.GetComponent<TextMeshProUGUI>();
         }
+        else
+        {
+            Debug.LogError("HUD Controller Error: Could not find any scene object tagged 'HUD_ScrapText'!");
+        }
+    }
+
+    void Update()
+    {
+        // Guard checking: Ensure we only write to our own UI display and that it's linked
+        if (!IsOwner || scrapTextDisplay == null || playerEconomy == null) return;
+
+        // Pull the live synchronized NetworkVariable value seamlessly
+        scrapTextDisplay.text = $"Scrap: {playerEconomy.scrapCount.Value}";
     }
 }

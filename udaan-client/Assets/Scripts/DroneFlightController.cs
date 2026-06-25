@@ -1,56 +1,84 @@
 using UnityEngine;
 using Unity.Netcode;
+using System;
 
-[RequireComponent(typeof(Rigidbody))]
 public class DroneFlightController : NetworkBehaviour
 {
-    [Header("Flight Settings")]
-    public float forwardThrust = 20f;
-    public float pitchSpeed = 5f;
-    public float yawSpeed = 8f;
-
-    [Header("Hover Mechanics (Arcade Feel)")]
-    public float hoverHeight = 2f; 
-    public float hoverForce = 65f;
-    public float hoverDampening = 15f; 
-
     private Rigidbody rb;
     private PlayerEconomy playerEconomy;
     private float activeSpeedModifier = 1.0f; // Default state: 100% speed
-    private float pitchInput;
-    private float yawInput;
-    private float thrustInput;
+
+    [Header("Class Data Configurations")]
+    public DroneClassData defaultClassData; // Declared at class level so it displays in Unity!
+
+    [Header("Base Flight Values")]
+    public float forwardThrust = 15f;
+    public float tiltAmount = 25f;
+    public float flyUpForce = 15f;
+    private float initialFlyUpForce;
+    public float hoverAltitude = 1.5f;
+    public float hoverForce = 12f;
+    public float hoverDamp = 6f;
+    
+    [Header("Steering Sensitivity")]
+    public float turnSpeed = 100f;
+    public float pitchSpeed = 100f;
+
+    [Header("Laser Mounts")]
+    public Transform leftLaserMount;
+    public Transform rightLaserMount;
+
+    // Track input state for hover suppression
+    private bool isManuallyOverridingHover = false;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         playerEconomy = GetComponent<PlayerEconomy>();
+        initialFlyUpForce = flyUpForce;
+
+        // Defensive Guard: Only load values if the ScriptableObject has been dragged into the slot
+        if (defaultClassData != null)
+        {
+            forwardThrust = defaultClassData.baseThrustForce;
+            rb.linearDamping = defaultClassData.baseDragValue;
+            Debug.Log($"Class [{defaultClassData.className}] profiles successfully initialized for local entity physical assets.");
+        }
+        else
+        {
+            Debug.LogWarning("DroneFlightController Alert: No Default Class Data asset assigned! Falling back to base hardcoded inspector presets.");
+        }
+    }
+
+    public void InitializeClassData(DroneClassData classData)
+    {
+        defaultClassData = classData;
+        if (defaultClassData != null)
+        {
+            forwardThrust = defaultClassData.baseThrustForce;
+            if (rb == null) rb = GetComponent<Rigidbody>();
+            rb.linearDamping = defaultClassData.baseDragValue;
+            Debug.Log($"[DRONE-PLAYER-{(IsServer ? "HOST" : "CLIENT")}] NetID: {NetworkObjectId} - Successfully applied Class: {classData.className}");
+        }
     }
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-        // This runs the exact millisecond the drone connects to the server
-        if (IsOwner)
-        {
-            // Teleport to a random X and Z coordinate so we don't stack like pancakes
-            float randomX = Random.Range(-8f, 8f);
-            float randomZ = Random.Range(-8f, 8f);
-            
-            // Drop them from 3 meters in the air so they gracefully hover down
-            transform.position = new Vector3(randomX, 3f, randomZ);
+        if (!IsOwner) return;
 
-            // Subscribe to our wallet's speed upgrade hook safely on spawn
-            if (playerEconomy != null)
-            {
-                playerEconomy.OnSpeedModifierUpgraded += HandleSpeedUpgraded;
-            }
+        // Subscribing cleanly to our wallet's upgrade modifications hook safely on spawn
+        if (playerEconomy != null)
+        {
+            playerEconomy.OnSpeedModifierUpgraded += HandleSpeedUpgraded;
         }
+
+        SpawnSafetyReroute();
     }
 
     public override void OnNetworkDespawn()
     {
-        // Always unsubscribe on network teardown to prevent memory leaks!
+        // Unsubscribing cleanly to prevent performance memory fragmentation leaks
         if (playerEconomy != null)
         {
             playerEconomy.OnSpeedModifierUpgraded -= HandleSpeedUpgraded;
@@ -60,86 +88,107 @@ public class DroneFlightController : NetworkBehaviour
 
     private void HandleSpeedUpgraded(float newMultiplier)
     {
-        // Scale our active modifier (e.g. 1.0f -> 1.15f)
-        activeSpeedModifier *= newMultiplier; 
-        Debug.Log($"Flight Controller received upgrade! New speed modifier: {activeSpeedModifier}");
+        activeSpeedModifier *= newMultiplier;
+        Debug.Log($"Flight Controller received upgrade! New speed modifier calculation parameter is: {activeSpeedModifier}");
     }
 
-    void Update()
+    private void SpawnSafetyReroute()
     {
-        // If this is not OUR drone, do not read our controller inputs!
-        if (!IsOwner) return;
-
-        // 1. GATHER INPUTS
-        
-        // Left Analog L/R (Yaw) - Works for Keyboard A/D and Xbox Left Stick X
-        yawInput = Input.GetAxis("Horizontal"); 
-        
-        // Left Analog U/D (Pitch) - Works for Keyboard W/S and Xbox Left Stick Y
-        pitchInput = Input.GetAxis("Vertical");   
-
-        // Thrust Inputs
-        thrustInput = 0f;
-
-        // Forward Thrust: Spacebar OR Xbox 'A' Button
-        if (Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.JoystickButton0)) 
-        {
-            thrustInput = 1f;
-        }
-            
-        // Reverse/Brake: Left Shift OR Xbox 'B' Button
-        if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.JoystickButton1)) 
-        {
-            thrustInput = -1f;
-        }
+        float randomX = UnityEngine.Random.Range(-8f, 8f);
+        float randomZ = UnityEngine.Random.Range(-8f, 8f);
+        transform.position = new Vector3(randomX, 3f, randomZ);
     }
 
     void FixedUpdate()
     {
-        // If this is not OUR drone, do not run the physics!
         if (!IsOwner) return;
 
-        // Physics calculations must happen in FixedUpdate
-        ApplyHover();
-        ApplyMovement();
+        HandleFlightMovement();
+        HandleHoverPhysics();
     }
 
-    void ApplyHover()
+    private void HandleFlightMovement()
     {
-        // Shoot an invisible laser down to find the ground
-        Ray ray = new Ray(transform.position, -Vector3.up);
+        // 1. Forward Thrust Processing (Right Trigger)
+        float thrustInput = 0f;
+        try { thrustInput = Input.GetAxis("Xbox_RT"); } catch { }
+
+        // 2. Altitude (Ascend/Descend from Left Stick Y)
+        float altitudeInput = 0f;
+        try { altitudeInput = Input.GetAxis("Vertical"); } catch { }
+
+        // 3. Strafe/Lateral Translation (Left Stick X)
+        float strafeInput = 0f;
+        try { strafeInput = Input.GetAxis("Horizontal"); } catch { }
+
+        // 4. Aim Yaw (Turn Left/Right from Right Stick X)
+        float yawInput = 0f;
+        try { yawInput = Input.GetAxis("TargetYaw"); } catch { }
+
+        // 5. Aim Pitch (Nose Up/Down from Right Stick Y)
+        float pitchInput = 0f;
+        try { pitchInput = Input.GetAxis("TargetPitch"); } catch { }
+
+        // Check if we are explicitly providing manual override inputs (thrust or altitude)
+        isManuallyOverridingHover = Mathf.Abs(thrustInput) > 0.1f || Mathf.Abs(altitudeInput) > 0.1f;
+
+        // Execute Forward Thrust
+        if (Mathf.Abs(thrustInput) > 0.01f)
+        {
+            rb.AddForce(transform.forward * thrustInput * forwardThrust * activeSpeedModifier, ForceMode.Acceleration);
+        }
+
+        // Execute Altitude Thrust
+        if (Mathf.Abs(altitudeInput) > 0.01f)
+        {
+            rb.AddForce(Vector3.up * altitudeInput * flyUpForce, ForceMode.Acceleration);
+        }
+
+        // Execute Strafe Drift
+        if (Mathf.Abs(strafeInput) > 0.01f)
+        {
+            rb.AddForce(transform.right * strafeInput * (forwardThrust * 0.5f) * activeSpeedModifier, ForceMode.Acceleration);
+        }
+
+        // Execute Yaw Rotation
+        if (Mathf.Abs(yawInput) > 0.01f)
+        {
+            transform.Rotate(Vector3.up * yawInput * turnSpeed * Time.fixedDeltaTime, Space.World);
+        }
+
+        // Execute Pitch Rotation
+        if (Mathf.Abs(pitchInput) > 0.01f)
+        {
+            // Invert pitch so pulling back looks up (standard flight mechanics)
+            transform.Rotate(Vector3.right * -pitchInput * pitchSpeed * Time.fixedDeltaTime, Space.Self);
+        }
+
+        // Cosmetic Roll (Bank on turn)
+        float targetBank = -yawInput * tiltAmount;
+        Vector3 currentEuler = transform.eulerAngles;
+        // Keep the current pitch (X) and yaw (Y), but smoothly interpolate the bank (Z)
+        float newZ = Mathf.LerpAngle(currentEuler.z, targetBank, Time.fixedDeltaTime * 5f);
+        transform.rotation = Quaternion.Euler(currentEuler.x, currentEuler.y, newZ);
+    }
+
+    private void HandleHoverPhysics()
+    {
         RaycastHit hit;
-
-        if (Physics.Raycast(ray, out hit, hoverHeight * 2f))
+        if (Physics.Raycast(transform.position, Vector3.down, out hit, hoverAltitude + 2f))
         {
-            // Calculate how far we are from our target hover height
-            float proportionalHeight = (hoverHeight - hit.distance) / hoverHeight;
-            
-            // Apply upward force like a spring. The closer to the ground, the harder it pushes up.
-            Vector3 appliedHoverForce = Vector3.up * proportionalHeight * hoverForce;
-            
-            // Apply dampening so it doesn't bounce endlessly like a pogo stick
-            rb.AddForce(appliedHoverForce - (rb.linearVelocity * hoverDampening), ForceMode.Acceleration);
-        }
-        else
-        {
-            // If we fly off a ledge and the laser misses the ground, apply a gentle fake gravity
-            rb.AddForce(-Vector3.up * (hoverForce / 2f), ForceMode.Acceleration);
-        }
-    }
+            float distance = hit.distance;
+            if (distance <= hoverAltitude + 0.5f)
+            {
+                // Smoothly dampen the hover influence if manual inputs are active
+                float activeHoverForce = isManuallyOverridingHover ? hoverForce * 0.1f : hoverForce;
+                float activeHoverDamp = isManuallyOverridingHover ? hoverDamp * 0.1f : hoverDamp;
 
-    void ApplyMovement()
-    {
-        // YAW (Turning Left/Right)
-        rb.AddRelativeTorque(Vector3.up * yawInput * yawSpeed, ForceMode.Acceleration);
-
-        // PITCH (Tilting the nose Up/Down)
-        rb.AddRelativeTorque(Vector3.right * pitchInput * pitchSpeed, ForceMode.Acceleration);
-
-        // THRUST (Moving Forward/Backwards relative to where the nose is pointing)
-        if (Mathf.Abs(thrustInput) > 0.1f)
-        {
-            rb.AddRelativeForce(Vector3.forward * thrustInput * forwardThrust * activeSpeedModifier, ForceMode.Acceleration);
+                float error = hoverAltitude - distance;
+                float upwardVelocity = rb.linearVelocity.y;
+                float lift = (error * activeHoverForce) - (upwardVelocity * activeHoverDamp);
+                
+                rb.AddForce(Vector3.up * lift, ForceMode.Acceleration);
+            }
         }
     }
 }
