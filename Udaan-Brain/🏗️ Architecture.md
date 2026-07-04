@@ -1,9 +1,20 @@
+---
+type: architecture
+status: active
+updated: 2026-06-30
+tags: [architecture, system-map, read-first]
+---
+
 # Project Udaan: System Architecture
 
+**Role:** 1-page system map — read first every session. Rules that must hold: [[invariants]]. Patterns: [[Unity_NGO_Patterns]]. Variables: [[glossary]].
+
 ## 📡 Networking & Authority Layer
-- **Framework:** Unity Netcode for GameObjects (NGO)
-- **Authority Mode:** Client-Authoritative via `Network Transform` and `Network Rigidbody` (Authority Mode set to **Owner**).
-- **Spawn Handling:** Random coordinate allocation inside `OnNetworkSpawn` to prevent overlapping on scene entry.
+- **Framework:** Unity Netcode for GameObjects (NGO). Rationale: [[DEC-001_Netcode_NGO]].
+- **Hybrid authority:**
+  - **Movement → client-authoritative** via `Network Transform` / `Network Rigidbody` (Authority = **Owner**) for responsive feel.
+  - **Gameplay state → server-authoritative** (currency, health, damage, upgrades). Mutated only on the server (`if (!IsServer) return;`), replicated via `NetworkVariable<T>` (e.g. `PlayerEconomy.scrapCount`).
+- **Spawn Handling:** Random coordinate allocation inside `OnNetworkSpawn` to prevent overlapping on scene entry. Networked objects use `Spawn()`/`Despawn()`, never `Instantiate`/`Destroy`.
 
 ## 🎥 Camera Pipeline
 - **Rig:** Dynamic Camera Controller targeting empty child mounts on the player object (`FPV_Mount` [25° up-tilt] and `TPV_Mount`).

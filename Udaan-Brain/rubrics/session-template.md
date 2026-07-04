@@ -21,9 +21,10 @@ related: []
 - HH:MM — Modified `existing_file.cs:42-50`, added [Z].
 
 ## ✅ Verification
+Run the full [[verification]] checklist. Minimum:
 - [ ] Code compiles without Editor errors.
-- [ ] All rules in `architecture/invariants.md` respected.
+- [ ] All rules in [[invariants]] respected.
 - [ ] Manual Play Mode check completed (if applicable).
 
-## 📌 Summary (For `sessions/_index.md` & `changelog.md`)
+## 📌 Summary (one line → append to [[changelog]])
 [Exactly one single line: What was changed, what is left.]

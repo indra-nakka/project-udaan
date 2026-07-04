@@ -8,14 +8,25 @@ public class TargetHealth : NetworkBehaviour
     public float maxHealth = 100f;
     private float currentHealth;
 
+    [Header("Targeting")]
+    [Tooltip("Higher = locked first. Plan: destroyable projectile > enemy drone > minion > turret ...")]
+    public int targetPriority = 0;
+
     [Header("Drop Settings")]
     public GameObject scrapPrefab;
     public int dropCount = 3;
 
+    private Vector3 _initialScale;
+
     void Start()
     {
+        _initialScale = transform.localScale;
         InitializeClassData(defaultClassData);
+        if (currentHealth <= 0f) currentHealth = maxHealth; // offline / no class data: ensure full HP
     }
+
+    // Damage may be applied offline (single-player toy) or server-side in a network session.
+    private bool HasDamageAuthority => !IsSpawned || IsServer;
 
     public void InitializeClassData(DroneClassData classData)
     {
@@ -31,13 +42,14 @@ public class TargetHealth : NetworkBehaviour
     // This function will be called by the Nerf Dart when it hits
     public void TakeDamage(float amount)
     {
-        if (!IsServer) return;
+        if (!HasDamageAuthority) return;
         currentHealth -= amount;
-        
+
         Debug.Log("Hit! Dummy health is now: " + currentHealth);
 
-        // Make the dummy pop a little bit when hit (visual feedback)
-        transform.localScale = transform.localScale * 0.9f; 
+        // Shrink with health: full HP = 100% size, 0 HP = 50% size, then pop.
+        float frac = Mathf.Clamp01(currentHealth / maxHealth);
+        transform.localScale = _initialScale * Mathf.Lerp(0.5f, 1f, frac);
 
         if (currentHealth <= 0)
         {
@@ -80,16 +92,15 @@ public class TargetHealth : NetworkBehaviour
             }
         }
 
-        // We will replace this with a cool confetti particle effect later
-        if (IsServer)
+        // Respawn the dummy: refill, reset size, and relocate (server in a session, or locally when offline).
+        if (IsServer || !IsSpawned)
         {
-            // Refill health
             currentHealth = maxHealth;
-            // Reroute to a random sandbox position
+            transform.localScale = _initialScale;
             float randomX = UnityEngine.Random.Range(-20f, 20f);
             float randomZ = UnityEngine.Random.Range(-20f, 20f);
-            transform.position = new Vector3(randomX, 2f, randomZ);
-            Debug.Log($"[SERVER] Target Dummy popped! Relocating to synchronized coordinates: {transform.position}");
+            transform.position = new Vector3(randomX, transform.position.y, randomZ);
+            Debug.Log($"Target popped! Relocating to {transform.position}");
         }
     }
 }

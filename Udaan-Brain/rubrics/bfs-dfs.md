@@ -13,7 +13,7 @@ Scan horizontally across systems to map dependencies, build basic placeholders, 
 ### Strict Constraints & Stop Logic
 - **Time-Box Limit:** Max 10 minutes of autonomous scanning or file reading per macro-instruction.
 - **File Access Cap:** Maximum of **5 files** may be opened sequentially during initial discovery.
-- **🚨 Hard Stop Condition:** If the objective requires opening a 6th file to understand a dependency, the agent **MUST STOP**. 
+- **🚨 Hard Stop Condition:** If the objective requires opening a 6th file to understand a dependency, the agent **MUST STOP**.
   - Do not keep guessing.
   - Summarize what was learned across the 5 files.
   - Present the known dependency graph to the user and request explicit clearance or clarity before opening more files.
@@ -29,12 +29,9 @@ Dive deep into a single specific component or system pipeline to resolve errors 
 ### Strict Constraints & Stop Logic
 - **Scope Isolation:** Max **2 closely coupled files** (e.g., `TargetHealth.cs` and `ScrapItem.cs`) may be edited in a single execution loop.
 - **Anti-Sprawl Rule:** If fixing a bug in File A requires changing code in File B, which then requires changing code in File C, the agent **MUST STOP**. This indicates architectural sprawl.
-- **Uncertainty Gate:** If a logical path is ambiguous or relies on a missing dependency, the agent is strictly forbidden from writing "placeholder assumptions." It must log the unknown variables in `context/assumptions.md` with `confidence: low` and return control to the user.
+- **Uncertainty Gate:** If a logical path is ambiguous or relies on a missing dependency, the agent is strictly forbidden from writing "placeholder assumptions." It must log the unknown in [[assumptions]] with `confidence: low` and return control to the user.
 
 ---
 
-## 🛠️ Verification Checklist (Definition of Done)
-Before marking any task as complete under either mode, the agent must verify:
-1. All changes are logged line-by-line in the active session file.
-2. A single tracking line has been appended to `changelog.md`.
-3. No breaking changes were introduced to files listed under `architecture/invariants.md`.
+## 🛠️ Definition of Done
+Before marking any task complete under either mode, run the canonical checklist in **[[verification]]**. (Single source of truth — not duplicated here.)
