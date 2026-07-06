@@ -74,6 +74,9 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
     public bool showRadar = true;
     public float radarRange = 200f;
     public float radarPixelRadius = 70f;
+    [Tooltip("Draw faint map/terrain footprints on the radar. Toggle live with the terrain key.")]
+    public bool showRadarTerrain = false;
+    public KeyCode radarTerrainToggle = KeyCode.T;
 
     [Header("Optional overrides")]
     public Font uiFont; // leave null to use the built-in legacy runtime font
@@ -99,10 +102,25 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
     private RectTransform _radarRoot;      // mini-radar
     private readonly System.Collections.Generic.List<Image> _radarBlips = new System.Collections.Generic.List<Image>();
     private readonly System.Collections.Generic.List<Transform> _radarTargets = new System.Collections.Generic.List<Transform>();
+    private readonly System.Collections.Generic.List<Image> _outpostBlips = new System.Collections.Generic.List<Image>();
+    private readonly System.Collections.Generic.List<Image> _terrainBlips = new System.Collections.Generic.List<Image>();
+    private System.Collections.Generic.List<Vector3> _terrainPoints;   // cached map footprints (world XZ)
     private float _nextRadarScan;
+    // objective marker (e.g. the Core during Defend): world-tracked tag + edge arrow
+    private RectTransform _objMarker, _objArrow;
+    private Image _objIcon, _objArrowImg;
+    private Text _objLabel;
+    private Transform _objTarget;
+    private TargetHealth _objHealth;
+    private string _objName = "";
     private float _prevAimX, _nextFlick;
-    private Text _schemeLabel, _aimModeLabel, _infoText, _statText;
+    private Text _schemeLabel, _aimModeLabel, _infoText, _statText, _ammoText;
     private Rigidbody _droneRb;
+    private TargetHealth _ownHealth;
+    private DroneWeapon _ownWeapon;
+    private RectTransform _hpBarFill, _damageFlash, _hitmarker;
+    private float _flashUntil, _hitmarkerUntil, _hpBarWidth = 320f;
+    private string _lastAmmo, _lastStat; // avoid per-frame Text.text reassignment (canvas rebuild) when unchanged
     private Sprite _circle, _square, _triangle;
     private RaceManager _race;
     private FlightInputRouter _router;
@@ -122,6 +140,8 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
         _router = GetComponent<FlightInputRouter>();
         _targeting = GetComponent<TargetingSystem>();
         _droneRb = GetComponent<Rigidbody>();
+        _ownHealth = GetComponent<TargetHealth>();
+        _ownWeapon = GetComponent<DroneWeapon>();
         if (hideOnDesktop && !Input.touchSupported) { enabled = false; return; }
         BuildUI();
     }
@@ -281,6 +301,16 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
 
     /// <summary>Push race/status text into the top-center readout.</summary>
     public void SetInfoText(string text) { if (_infoText != null) _infoText.text = text; }
+
+    /// <summary>Track a world objective (e.g. the Core): shows a labelled tag on it + an edge arrow when off-screen. Pass null to clear.</summary>
+    public void SetObjectiveMarker(Transform t, string label)
+    {
+        _objTarget = t;
+        _objName = label;
+        _objHealth = t != null ? t.GetComponent<TargetHealth>() : null;
+        if (_objMarker != null) _objMarker.gameObject.SetActive(t != null);
+        if (_objArrow != null) _objArrow.gameObject.SetActive(false);
+    }
 
     public void ToggleScheme()
     {
@@ -448,7 +478,184 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
 
         BuildArtificialHorizon();
         BuildRadar();
+        BuildObjectiveMarker();
+        BuildCombatHUD();
         LayoutStatic();
+    }
+
+    // A world-tracked objective tag (diamond icon + label) plus an edge arrow for when it's off-screen.
+    private void BuildObjectiveMarker()
+    {
+        var mGo = new GameObject("ObjectiveMarker", typeof(RectTransform));
+        mGo.transform.SetParent(_canvas.transform, false);
+        _objMarker = mGo.GetComponent<RectTransform>();
+        _objMarker.anchorMin = _objMarker.anchorMax = new Vector2(0.5f, 0.5f);
+        _objMarker.pivot = new Vector2(0.5f, 0.5f);
+        _objMarker.sizeDelta = new Vector2(120f, 60f);
+
+        Color cyan = new Color(0.4f, 0.85f, 1f, 1f);
+        _objIcon = AddChildImage(_objMarker, "ObjIcon", _square, cyan, new Vector2(20f, 20f), new Vector2(0f, 0f));
+        _objIcon.rectTransform.localEulerAngles = new Vector3(0f, 0f, 45f); // diamond
+
+        var lGo = new GameObject("ObjLabel");
+        lGo.transform.SetParent(_objMarker, false);
+        _objLabel = lGo.AddComponent<Text>();
+        _objLabel.font = ResolveFont();
+        _objLabel.alignment = TextAnchor.LowerCenter;
+        _objLabel.fontSize = 20;
+        _objLabel.color = cyan;
+        _objLabel.horizontalOverflow = HorizontalWrapMode.Overflow;
+        _objLabel.verticalOverflow = VerticalWrapMode.Overflow;
+        var lrt = _objLabel.rectTransform;
+        lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+        lrt.pivot = new Vector2(0.5f, 0f);
+        lrt.sizeDelta = new Vector2(160f, 24f);
+        lrt.anchoredPosition = new Vector2(0f, 16f);
+
+        var aGo = new GameObject("ObjectiveArrow", typeof(RectTransform));
+        aGo.transform.SetParent(_canvas.transform, false);
+        _objArrow = aGo.GetComponent<RectTransform>();
+        _objArrow.anchorMin = _objArrow.anchorMax = new Vector2(0.5f, 0.5f);
+        _objArrow.pivot = new Vector2(0.5f, 0.5f);
+        _objArrow.sizeDelta = new Vector2(34f, 34f);
+        _objArrowImg = aGo.AddComponent<Image>();
+        _objArrowImg.sprite = _triangle; _objArrowImg.color = cyan; _objArrowImg.raycastTarget = false;
+
+        _objMarker.gameObject.SetActive(false);
+        _objArrow.gameObject.SetActive(false);
+    }
+
+    // Project the objective to screen each frame: on-screen = tag on it, off-screen = arrow at the edge.
+    private void UpdateObjectiveMarker()
+    {
+        if (_objMarker == null) return;
+        if (_objTarget == null)
+        {
+            if (_objMarker.gameObject.activeSelf) _objMarker.gameObject.SetActive(false);
+            if (_objArrow != null && _objArrow.gameObject.activeSelf) _objArrow.gameObject.SetActive(false);
+            return;
+        }
+        if (_lockCam == null) _lockCam = Camera.main;
+        if (_lockCam == null) return;
+
+        Vector3 sp = _lockCam.WorldToScreenPoint(_objTarget.position + Vector3.up * 6f);
+        Vector2 center = new Vector2(Screen.width, Screen.height) * 0.5f;
+        bool behind = sp.z < 0f;
+        Vector2 scr = new Vector2(sp.x, sp.y);
+        if (behind) scr = center - (scr - center); // mirror when the point is behind the camera
+        bool onScreen = !behind && sp.x >= 0f && sp.x <= Screen.width && sp.y >= 0f && sp.y <= Screen.height;
+
+        string pct = _objHealth != null ? $"  {Mathf.CeilToInt(_objHealth.HealthFraction * 100f)}%" : "";
+        if (_objLabel != null) _objLabel.text = _objName + pct;
+
+        if (onScreen)
+        {
+            _objMarker.gameObject.SetActive(true);
+            _objArrow.gameObject.SetActive(false);
+            _objMarker.anchoredPosition = new Vector2(sp.x - center.x, sp.y - center.y);
+        }
+        else
+        {
+            _objMarker.gameObject.SetActive(false);
+            _objArrow.gameObject.SetActive(true);
+            Vector2 dir = scr - center;
+            if (dir.sqrMagnitude < 1f) dir = Vector2.up;
+            dir.Normalize();
+            float mx = Screen.width * 0.5f - 60f, my = Screen.height * 0.5f - 60f;
+            float scale = Mathf.Min(mx / Mathf.Max(Mathf.Abs(dir.x), 0.0001f), my / Mathf.Max(Mathf.Abs(dir.y), 0.0001f));
+            _objArrow.anchoredPosition = dir * scale;
+            float ang = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+            _objArrow.localEulerAngles = new Vector3(0f, 0f, ang - 90f); // _triangle points +Y
+        }
+    }
+
+    void OnEnable() { TargetHealth.OnAnyDamaged += HandleDamaged; }
+    void OnDisable() { TargetHealth.OnAnyDamaged -= HandleDamaged; }
+
+    private void HandleDamaged(TargetHealth victim, int attackerTeam, float amount, bool fromPlayer)
+    {
+        if (_ownHealth == null) _ownHealth = GetComponent<TargetHealth>();
+        if (_ownHealth != null && victim == _ownHealth) { _flashUntil = Time.time + 0.25f; CameraController.Shake(0.35f); } // I got hit
+        if (fromPlayer && victim != _ownHealth) _hitmarkerUntil = Time.time + 0.12f; // my own hit connected
+    }
+
+    private void BuildCombatHUD()
+    {
+        // Full-screen red damage flash.
+        _damageFlash = NewImage("DamageFlash", _square, new Color(1f, 0f, 0f, 0f));
+        _damageFlash.anchorMin = Vector2.zero; _damageFlash.anchorMax = Vector2.one;
+        _damageFlash.offsetMin = Vector2.zero; _damageFlash.offsetMax = Vector2.zero;
+        _damageFlash.SetAsFirstSibling(); // behind other HUD
+
+        // Player HP bar (bottom-left).
+        var bg = NewImage("HpBarBg", _square, new Color(0f, 0f, 0f, 0.5f));
+        bg.anchorMin = bg.anchorMax = Vector2.zero; bg.pivot = Vector2.zero;
+        bg.sizeDelta = new Vector2(_hpBarWidth, 20f); bg.anchoredPosition = new Vector2(14f, 14f);
+
+        var fillGo = new GameObject("HpBarFill");
+        fillGo.transform.SetParent(bg, false);
+        var fillImg = fillGo.AddComponent<Image>();
+        fillImg.sprite = _square; fillImg.color = new Color(0.3f, 1f, 0.4f, 0.95f); fillImg.raycastTarget = false;
+        _hpBarFill = fillImg.rectTransform;
+        _hpBarFill.anchorMin = new Vector2(0f, 0f); _hpBarFill.anchorMax = new Vector2(0f, 1f);
+        _hpBarFill.pivot = new Vector2(0f, 0.5f);
+        _hpBarFill.sizeDelta = new Vector2(_hpBarWidth, 0f);
+        _hpBarFill.anchoredPosition = Vector2.zero;
+
+        // Ammo text (bottom-right, near the fire buttons).
+        var ammoGo = new GameObject("Ammo"); ammoGo.transform.SetParent(_canvas.transform, false);
+        _ammoText = ammoGo.AddComponent<Text>(); _ammoText.font = ResolveFont();
+        _ammoText.alignment = TextAnchor.LowerRight; _ammoText.fontSize = 20; _ammoText.color = Color.white;
+        var art = _ammoText.rectTransform;
+        art.anchorMin = art.anchorMax = new Vector2(1f, 0f); art.pivot = new Vector2(1f, 0f);
+        art.sizeDelta = new Vector2(220f, 60f); art.anchoredPosition = new Vector2(-14f, 14f);
+
+        // Hitmarker (center X, shown briefly on a hit).
+        var hm = new GameObject("Hitmarker", typeof(RectTransform)); hm.transform.SetParent(_canvas.transform, false);
+        _hitmarker = hm.GetComponent<RectTransform>();
+        _hitmarker.anchorMin = _hitmarker.anchorMax = new Vector2(0.5f, 0.5f); _hitmarker.pivot = new Vector2(0.5f, 0.5f);
+        _hitmarker.sizeDelta = new Vector2(40f, 40f);
+        Color hc = new Color(1f, 1f, 1f, 0.95f);
+        AddRotatedDash(_hitmarker, "HM1", hc, new Vector2(-12f, 12f), new Vector2(14f, 3f), -45f);
+        AddRotatedDash(_hitmarker, "HM2", hc, new Vector2(12f, 12f), new Vector2(14f, 3f), 45f);
+        AddRotatedDash(_hitmarker, "HM3", hc, new Vector2(-12f, -12f), new Vector2(14f, 3f), 45f);
+        AddRotatedDash(_hitmarker, "HM4", hc, new Vector2(12f, -12f), new Vector2(14f, 3f), -45f);
+        _hitmarker.gameObject.SetActive(false);
+    }
+
+    private void UpdateCombatHUD()
+    {
+        if (_ownHealth == null) _ownHealth = GetComponent<TargetHealth>();
+
+        if (_hpBarFill != null && _ownHealth != null)
+        {
+            float f = _ownHealth.HealthFraction;
+            _hpBarFill.sizeDelta = new Vector2(_hpBarWidth * f, 0f);
+            var img = _hpBarFill.GetComponent<Image>();
+            if (img != null) img.color = Color.Lerp(new Color(1f, 0.25f, 0.25f, 0.95f), new Color(0.3f, 1f, 0.4f, 0.95f), f);
+        }
+
+        if (_damageFlash != null)
+        {
+            var img = _damageFlash.GetComponent<Image>();
+            if (img != null) img.color = new Color(1f, 0f, 0f, Mathf.Clamp01((_flashUntil - Time.time) / 0.25f) * 0.35f);
+        }
+
+        if (_hitmarker != null)
+        {
+            bool show = Time.time < _hitmarkerUntil;
+            if (_hitmarker.gameObject.activeSelf != show) _hitmarker.gameObject.SetActive(show);
+        }
+
+        if (_ammoText != null)
+        {
+            string a = (_ownWeapon != null && _ownWeapon.HasAmmoSystem)
+                ? (_ownWeapon.IsReloading
+                    ? $"RELOADING…\nRKT {_ownWeapon.Rockets}"
+                    : $"AMMO {_ownWeapon.BulletsInMag}/{_ownWeapon.BulletMagSize}\nRKT {_ownWeapon.Rockets}")
+                : "";
+            if (a != _lastAmmo) { _ammoText.text = a; _lastAmmo = a; } // only touch the canvas on change
+        }
     }
 
     private void BuildRadar()
@@ -465,7 +672,8 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
 
         AddChildImage(_radarRoot, "RadarBg", _circle, new Color(0f, 0f, 0f, 0.35f), new Vector2(d, d), Vector2.zero);
         AddChildDash(_radarRoot, "RadarFwd", new Color(1f, 1f, 1f, 0.5f), new Vector2(0f, radarPixelRadius - 6f), new Vector2(3f, 10f));
-        AddChildImage(_radarRoot, "RadarSelf", _circle, new Color(0.3f, 1f, 0.5f, 0.95f), new Vector2(8f, 8f), Vector2.zero);
+        // "You" marker: an upward triangle (points to your heading), not a dot.
+        AddChildImage(_radarRoot, "RadarSelf", _triangle, new Color(0.3f, 1f, 0.5f, 1f), new Vector2(13f, 13f), Vector2.zero);
     }
 
     private Image AddChildImage(RectTransform parent, string name, Sprite sprite, Color c, Vector2 size, Vector2 pos)
@@ -485,13 +693,25 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
     {
         if (_radarRoot == null) return;
 
+        if (Input.GetKeyDown(radarTerrainToggle)) showRadarTerrain = !showRadarTerrain;
+
+        // Flattened heading basis is needed by the terrain/outpost passes too — compute once up front.
+        Vector3 fwdB = transform.forward; fwdB.y = 0f;
+        if (fwdB.sqrMagnitude < 0.0001f) fwdB = Vector3.forward;
+        fwdB.Normalize();
+        Vector3 rightB = Vector3.Cross(Vector3.up, fwdB);
+        DrawTerrain(fwdB, rightB);
+        DrawOutposts(fwdB, rightB);
+
         if (Time.time >= _nextRadarScan)
         {
             _nextRadarScan = Time.time + 0.1f;
             _radarTargets.Clear();
             Vector3 origin = transform.position;
-            foreach (var t in Object.FindObjectsByType<TargetHealth>(FindObjectsSortMode.None))
+            var all = TargetHealth.All; // registry, not a per-scan FindObjectsByType allocation
+            for (int i = 0; i < all.Count; i++)
             {
+                var t = all[i];
                 if (t == null || !t.gameObject.activeInHierarchy) continue;
                 if (t.transform.root == transform.root) continue;
                 if (Vector3.Distance(origin, t.transform.position) > radarRange) continue;
@@ -510,6 +730,7 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
         for (int i = 0; i < _radarTargets.Count; i++)
         {
             Transform t = _radarTargets[i];
+            if (t == null) { GetBlip(i).gameObject.SetActive(false); continue; } // target was destroyed
             Vector3 rel = t.position - transform.position;
             Vector2 p = new Vector2(Vector3.Dot(rel, right), Vector3.Dot(rel, fwd)) / radarRange * radarPixelRadius;
             if (p.magnitude > radarPixelRadius) p = p.normalized * radarPixelRadius;
@@ -518,7 +739,10 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
             b.gameObject.SetActive(true);
             b.rectTransform.anchoredPosition = p;
             bool locked = t == lockT;
-            b.color = locked ? new Color(0.3f, 1f, 0.5f, 1f) : new Color(1f, 0.3f, 0.3f, 0.9f);
+            var bth = t.GetComponent<TargetHealth>();
+            bool ally = bth != null && _ownHealth != null && bth.team == _ownHealth.team;
+            b.color = locked ? new Color(1f, 1f, 0.3f, 1f)
+                     : (ally ? new Color(0.3f, 0.7f, 1f, 0.9f) : new Color(1f, 0.3f, 0.3f, 0.9f));
             b.rectTransform.sizeDelta = locked ? new Vector2(12f, 12f) : new Vector2(8f, 8f);
         }
         for (int i = _radarTargets.Count; i < _radarBlips.Count; i++)
@@ -530,6 +754,83 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
         while (_radarBlips.Count <= i)
             _radarBlips.Add(AddChildImage(_radarRoot, "Blip", _circle, Color.red, new Vector2(8f, 8f), Vector2.zero));
         return _radarBlips[i];
+    }
+
+    // Outposts as owner-colored squares (white neutral / blue yours / red enemy).
+    private void DrawOutposts(Vector3 fwd, Vector3 right)
+    {
+        var outposts = Outpost.All; // registry, not a per-frame FindObjectsByType allocation
+        int used = 0;
+        for (int i = 0; i < outposts.Count; i++)
+        {
+            var o = outposts[i];
+            if (o == null) continue;
+            Vector3 rel = o.transform.position - transform.position;
+            if (rel.magnitude > radarRange * 1.2f) continue;
+            Vector2 p = new Vector2(Vector3.Dot(rel, right), Vector3.Dot(rel, fwd)) / radarRange * radarPixelRadius;
+            if (p.magnitude > radarPixelRadius) p = p.normalized * radarPixelRadius;
+
+            Image b = GetOutpostBlip(used++);
+            b.gameObject.SetActive(true);
+            b.rectTransform.anchoredPosition = p;
+            b.color = o.OwnerTeam == 1 ? new Color(0.3f, 0.62f, 1f, 1f)
+                    : o.OwnerTeam == 2 ? new Color(1f, 0.3f, 0.28f, 1f)
+                    : new Color(0.92f, 0.92f, 0.95f, 0.95f);
+        }
+        for (int i = used; i < _outpostBlips.Count; i++) _outpostBlips[i].gameObject.SetActive(false);
+    }
+
+    private Image GetOutpostBlip(int i)
+    {
+        while (_outpostBlips.Count <= i)
+            _outpostBlips.Add(AddChildImage(_radarRoot, "OutpostBlip", _square, Color.white, new Vector2(11f, 11f), Vector2.zero));
+        return _outpostBlips[i];
+    }
+
+    // Faint map footprints (towers/walls/props) — cached once, cheap to plot. Toggle with the terrain key.
+    private void DrawTerrain(Vector3 fwd, Vector3 right)
+    {
+        if (!showRadarTerrain)
+        {
+            for (int i = 0; i < _terrainBlips.Count; i++) _terrainBlips[i].gameObject.SetActive(false);
+            return;
+        }
+        if (_terrainPoints == null) CacheTerrainPoints();
+
+        int used = 0;
+        for (int i = 0; i < _terrainPoints.Count && used < 160; i++)
+        {
+            Vector3 rel = _terrainPoints[i] - transform.position;
+            if (rel.magnitude > radarRange) continue;
+            Vector2 p = new Vector2(Vector3.Dot(rel, right), Vector3.Dot(rel, fwd)) / radarRange * radarPixelRadius;
+            if (p.magnitude > radarPixelRadius) continue; // clip terrain to the disc (don't ring it)
+
+            Image b = GetTerrainBlip(used++);
+            b.gameObject.SetActive(true);
+            b.rectTransform.anchoredPosition = p;
+        }
+        for (int i = used; i < _terrainBlips.Count; i++) _terrainBlips[i].gameObject.SetActive(false);
+    }
+
+    private Image GetTerrainBlip(int i)
+    {
+        while (_terrainBlips.Count <= i)
+            _terrainBlips.Add(AddChildImage(_radarRoot, "TerrainBlip", _square, new Color(0.7f, 0.72f, 0.75f, 0.45f), new Vector2(4f, 4f), Vector2.zero));
+        return _terrainBlips[i];
+    }
+
+    // Sample the generated map's larger props once (skip tiny bits) so the terrain layer is cheap.
+    private void CacheTerrainPoints()
+    {
+        _terrainPoints = new System.Collections.Generic.List<Vector3>();
+        var park = Object.FindFirstObjectByType<ParkMapGenerator>();
+        if (park == null) return;
+        foreach (var r in park.GetComponentsInChildren<Renderer>())
+        {
+            Vector3 s = r.transform.lossyScale;
+            if (Mathf.Max(s.x, s.z) < 1.5f) continue; // ignore thin posts / clutter
+            _terrainPoints.Add(r.transform.position);
+        }
     }
 
     private void BuildArtificialHorizon()
@@ -623,11 +924,15 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
         if (_statText != null)
         {
             float spd = _droneRb != null ? _droneRb.linearVelocity.magnitude : 0f;
-            _statText.text = $"SPD {spd:0} m/s\nALT {transform.position.y:0} m";
+            string hp = _ownHealth != null ? $"\nHP {Mathf.Ceil(_ownHealth.HealthFraction * 100f):0}%" : "";
+            string stat = $"SPD {spd:0} m/s\nALT {transform.position.y:0} m{hp}";
+            if (stat != _lastStat) { _statText.text = stat; _lastStat = stat; } // integer-rounded → changes rarely
         }
 
         UpdateHorizon();
         UpdateRadar();
+        UpdateObjectiveMarker();
+        UpdateCombatHUD();
     }
 
     /// <summary>Crosshair snaps onto an on-screen lock; if the lock is off-screen, show an edge arrow toward it.</summary>

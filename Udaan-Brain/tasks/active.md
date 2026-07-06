@@ -6,7 +6,16 @@
 *Flight + aim + weapons feel is landing. Next: make the range fight back, then assemble the vertical-slice demo.*
 
 ### In progress
-- [ ] **Tier-1 enemy AI** — an AI "brain" that pilots a drone via `IFlightInput` (seek/strafe/keep-distance + engage/evade states) and shoots using `TargetingSystem`. Reuses all player flight/weapon code.
+- [ ] **"Sky Sentinel" demo — test & tune** (spine done, session-050: `MissionDirector` waves→boss→win/lose). Tune wave counts/HP, boss stats, pacing. Then add the richer beats.
+
+### Up next (demo depth)
+- [x] Juice pass v1 — VFX (explosions/sparks/tracers/shake) + procedural SFX (session-052)
+- [x] Capturable **outposts** + allied AI drones (session-053)
+- [x] **Defend** objective beat — hold the core (session-054)
+- [x] Mid-mission **upgrade** pick (session-054)
+- [ ] Difficulty settings (assist strength / enemy stats presets) — requested, later
+- [ ] **Authored audio** (real weapon/impact SFX + music) — needs asset files
+- [ ] **On-device touch pass** (shipping target)
 
 ### Up next
 - [ ] Hit feedback (hit-marker/flash, damage numbers) + audio for weapons — "feel" pass

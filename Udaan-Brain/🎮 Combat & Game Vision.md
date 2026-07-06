@@ -1,8 +1,8 @@
 ---
 type: design
-status: brainstorm
-updated: 2026-07-01
-tags: [vision, combat, moba, single-player, ai, reference]
+status: active
+updated: 2026-07-06
+tags: [vision, combat, moba, single-player, ai, reference, demo, core-loop]
 ---
 
 # 🎮 Combat & Game Vision (brainstorm)
@@ -104,3 +104,20 @@ Verdict: **Tier 1 enemies + one scripted boss are very achievable now** and are 
 - Demo enemy count / wave pacing / boss identity.
 - Art direction for readability (enemies must pop — see the magenta-target visibility lesson).
 - Does the demo use the race circuit as the "traverse" phase, or a bespoke arena?
+
+---
+
+## 8. Build status & recommended sequencing (as of session-051)
+
+**Playable now:** flight feel; free-look aim + soft lock-on + target switch + off-screen arrow; two weapons + limited ammo + reload + ammo/health pickups; dash; Tier-1 enemy AI + scaled boss; **mission spine** (intro → 3 escalating waves → boss → Victory/Defeat) with **3 lives**, safe respawn + spawn protection, **3s launch stealth**; greybox children's-park map (cover + maze walls + towers + hard boundary + collision push-off); combat HUD (corner reticle, mini-radar, artificial horizon, flight chevron, SPD/ALT/HP, ammo, hit flash + hitmarker, enemy health bars, objective readout).
+**Demo beats (§3):** Traverse ⬜ · Skirmish ✅ · Capture/allies ✅ · Defend ✅ (session-054) · Spend/upgrade ✅ (session-054) · Boss ✅. **Only "Traverse" (intro fly-in) remains.**
+
+**Recommended order (effort · impact):**
+1. **Juice pass — audio + VFX + screen shake** (days · *very high* showability). The loop is mechanically fun but silent & flat. Weapon/hit/explosion SFX, muzzle flash + tracer trails, kill explosions, engine hum, music, light screen shake + camera kick. Biggest bang-for-buck for "impressive to show" — even in greybox.
+2. **Allies + outposts + escort/defend** (~week · high). Allies are cheap: an `EnemyDroneAI` re-pointed at the enemy team (a new "team 1-ally" faction). A capturable outpost = a trigger zone with a capture bar that spawns allies. Add one escort/defend beat. Turns "survive + boss" into a real mission arc — the Precinct-Assault/MOBA seed.
+3. **Mid-mission upgrade spend** (days · medium). Scrap drops from kills → a quick in-combat buff/deployable pick. Ties the economy loop into the fight.
+4. **On-device touch pass** (days · high-necessity). Validate two-thumb + touch HUD on a real mid-range phone; declutter/tune. The shipping target — everything so far is controller-tested.
+5. **Content variety** (ongoing · medium): enemy archetypes (fast striker / tanky bulwark / ranged), a 3rd weapon (homing missile / mine).
+6. **Real art + audio production + funding** (post-slice): once the loop is proven and *shown*, this is where a small team + funding comes in.
+
+**Definition of "demo done":** a first-timer plays Sky Sentinel start→finish (~5 min), it *sounds and feels* punchy, and they want to replay for a better run. That build is the fundraising artifact.

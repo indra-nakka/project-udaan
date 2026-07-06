@@ -41,10 +41,20 @@ public class DroneFlightController : NetworkBehaviour
     public float dashCooldown = 0.6f;
     private float _nextDash;
 
+    [Tooltip("AI drones set this so the player's race countdown doesn't freeze them (they'd otherwise fall).")]
+    public bool ignoreCountdownLock = false;
+
+    [Header("Collision")]
+    [Tooltip("Softly push off walls instead of hard-stalling on them.")]
+    public bool collisionPushOff = true;
+    public float pushOffForce = 22f;
+
     [Header("Assists & Brake (touch feel)")]
     [Tooltip("When no pitch input, spring the nose back to level. OFF by default — it fights holding an attitude to aim. Enable only for a beginner/easy mode.")]
     public bool autoLevelAssist = false;
     public float autoLevelSpeed = 3f;
+    [Tooltip("Cosmetic bank-into-turn strength (0 = none). Auto-fades near vertical to avoid gimbal spin.")]
+    public float bankStrength = 1f;
     [Tooltip("How hard the air-brake bleeds off velocity.")]
     public float brakeStrength = 5f;
 
@@ -140,10 +150,11 @@ public class DroneFlightController : NetworkBehaviour
     void FixedUpdate()
     {
         if (!HasControl()) return;
-        if (RaceManager.FlightLocked) return; // frozen during the 3-2-1-GO countdown
+        if (RaceManager.FlightLocked && !ignoreCountdownLock) return; // frozen during the 3-2-1-GO countdown
 
         HandleFlightMovement();
         HandleHoverPhysics();
+        ClampToArena();
     }
 
     private void HandleFlightMovement()
@@ -217,20 +228,55 @@ public class DroneFlightController : NetworkBehaviour
     /// </summary>
     private void ApplyOrientationAssists(float yawInput, float pitchInput)
     {
+        // Near-vertical (nose straight up/down) the euler rebuild below gimbal-locks and snaps the drone
+        // upright/spins it. Fade the whole assist out as we point steeply up or down.
+        float vertical = Mathf.Abs(Vector3.Dot(transform.forward, Vector3.up)); // 0 = level, 1 = vertical
+        float authority = 1f - Mathf.SmoothStep(0.75f, 0.97f, vertical);
+        if (authority <= 0.001f) return;
+
         Vector3 e = transform.eulerAngles;
 
         // Bank (Z) proportional to turn.
-        float targetBank = -yawInput * tiltAmount;
-        float newZ = Mathf.LerpAngle(e.z, targetBank, Time.fixedDeltaTime * 5f);
+        float targetBank = -yawInput * tiltAmount * bankStrength;
+        float newZ = Mathf.LerpAngle(e.z, targetBank, Time.fixedDeltaTime * 5f * authority);
 
         // Pitch (X) auto-level toward 0 only when no active pitch input.
         float newX = e.x;
         if (autoLevelAssist && Mathf.Abs(pitchInput) < 0.05f)
-        {
-            newX = Mathf.LerpAngle(e.x, 0f, Time.fixedDeltaTime * autoLevelSpeed);
-        }
+            newX = Mathf.LerpAngle(e.x, 0f, Time.fixedDeltaTime * autoLevelSpeed * authority);
 
         transform.rotation = Quaternion.Euler(newX, e.y, newZ);
+    }
+
+    // Smoothly slide off walls: kill the velocity going into the surface and nudge back out.
+    // Ignores near-horizontal surfaces (floors/platforms) so the drone can still rest/hover on them.
+    void OnCollisionStay(Collision c)
+    {
+        if (!collisionPushOff || !HasControl()) return;
+        if (RaceManager.FlightLocked && !ignoreCountdownLock) return;
+
+        Vector3 n = c.GetContact(0).normal;
+        Vector3 nH = new Vector3(n.x, 0f, n.z);
+        if (nH.sqrMagnitude < 0.04f) return; // floor/ceiling — let hover physics handle it
+        nH.Normalize();
+
+        float into = Vector3.Dot(rb.linearVelocity, nH);
+        if (into < 0f) rb.linearVelocity -= nH * into;   // cancel velocity pushing into the wall
+        rb.AddForce(nH * pushOffForce, ForceMode.Acceleration);
+    }
+
+    private void ClampToArena()
+    {
+        if (!ArenaBounds.Enabled) return;
+        Vector3 off = transform.position - ArenaBounds.Center;
+        float d = off.magnitude;
+        if (d > ArenaBounds.Radius)
+        {
+            Vector3 n = off / d;
+            transform.position = ArenaBounds.Center + n * ArenaBounds.Radius;
+            float outward = Vector3.Dot(rb.linearVelocity, n);
+            if (outward > 0f) rb.linearVelocity -= n * outward; // hard wall: kill outward velocity
+        }
     }
 
     private void HandleHoverPhysics()

@@ -25,18 +25,27 @@ public class FlightInputRouter : MonoBehaviour, IFlightInput
 
     void Awake()
     {
-        // Grab any input sources already sitting on this drone (excluding this router itself).
-        foreach (var comp in GetComponents<MonoBehaviour>())
-        {
-            if (comp is IFlightInput src && !(comp is FlightInputRouter))
-                _sources.Add(src);
-        }
+        GatherSources();
+    }
+
+    void Start()
+    {
+        // Re-scan so sources added after Awake (e.g. EnemyDroneAI) are respected before provisioning.
+        GatherSources();
 
         if (_sources.Count == 0 && autoProvisionSources)
         {
             _sources.Add(gameObject.AddComponent<GamepadFlightInput>());
             _sources.Add(gameObject.AddComponent<TouchFlightHUD>());
         }
+    }
+
+    private void GatherSources()
+    {
+        _sources.Clear();
+        foreach (var comp in GetComponents<MonoBehaviour>())
+            if (comp is IFlightInput src && !(comp is FlightInputRouter) && !_sources.Contains(src))
+                _sources.Add(src);
     }
 
     /// <summary>Register a source created at runtime (e.g. a networked remote-input feed).</summary>

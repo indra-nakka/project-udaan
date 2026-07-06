@@ -19,13 +19,42 @@ public class SinglePlayerBootstrap : MonoBehaviour
 
     [Header("Track")]
     public bool buildTrack = true;
+    [Tooltip("Build the hoop race circuit + countdown. Off = combat sandbox (ground only).")]
+    public bool buildGates = false;
     public RaceTrackGenerator trackGenerator;
 
     [Header("Targets (to test weapons/aim)")]
-    public bool spawnTargets = true;
+    public bool spawnTargets = false;
     public int targetCount = 6;
     public float targetAreaRadius = 25f;
     public float targetHeight = 5f;
+
+    [Header("Enemies (Tier-1 AI)")]
+    public bool spawnEnemies = true;
+    public int enemyCount = 3;
+    public float enemyHealth = 100f;
+    public float playerHealth = 300f;
+    public Color enemyColor = new Color(1f, 0.35f, 0.3f);
+    [Tooltip("How far from the arena centre enemies spawn (player starts near the centre).")]
+    public float enemySpawnDistance = 75f;
+
+    [Header("Arena")]
+    public bool hardBoundary = true;
+    public float arenaRadius = 120f;
+    public bool buildMap = true;
+
+    [Header("Pickups")]
+    public bool spawnPickups = true;
+    public int ammoPickups = 6;
+    public int healthPickups = 4;
+    public float pickupHeight = 6f;
+
+    [Header("Mission")]
+    [Tooltip("Run the 'Sky Sentinel' waves→boss mission. Off = plain enemy sandbox.")]
+    public bool missionMode = true;
+
+    private const int TeamPlayer = 1;
+    private const int TeamEnemy = 2;
 
     void Start()
     {
@@ -39,19 +68,116 @@ public class SinglePlayerBootstrap : MonoBehaviour
         {
             if (trackGenerator == null)
             {
+                // Create inactive so we can set buildGates BEFORE the generator's Awake runs.
                 var go = new GameObject("RaceTrack");
-                trackGenerator = go.AddComponent<RaceTrackGenerator>(); // Awake builds gates immediately
+                go.SetActive(false);
+                trackGenerator = go.AddComponent<RaceTrackGenerator>();
+                trackGenerator.buildGates = buildGates;
+                go.SetActive(true);
             }
             start = trackGenerator.StartPose;
         }
 
+        // Hard arena boundary (sphere).
+        ArenaBounds.Enabled = hardBoundary;
+        ArenaBounds.Center = (buildTrack && trackGenerator != null) ? trackGenerator.transform.position : transform.position;
+        ArenaBounds.Radius = arenaRadius;
+
+        // Greybox children's-park cover. Inactive-then-activate so center/radius are set before its Awake.
+        if (buildMap)
+        {
+            var mgo = new GameObject("ParkMap");
+            mgo.SetActive(false);
+            var pm = mgo.AddComponent<ParkMapGenerator>();
+            pm.center = ArenaBounds.Center;
+            pm.radius = arenaRadius * 0.92f;
+            mgo.SetActive(true);
+        }
+
         var drone = SpawnDrone(start);
 
-        // Hand the drone to the race manager so it owns placement + the 3-2-1-GO countdown + restart.
-        if (drone != null && buildTrack && trackGenerator != null && trackGenerator.raceManager != null)
+        // Race countdown/laps only when the hoop circuit exists; combat sandbox flies immediately.
+        if (drone != null && buildTrack && buildGates && trackGenerator != null && trackGenerator.raceManager != null)
             trackGenerator.raceManager.SetupRace(drone, start);
 
-        if (spawnTargets) SpawnTargets();
+        // Magenta practice dummies removed from the combat sandbox (set spawnTargets + call back to re-enable).
+        if (missionMode) StartMission(drone);
+        else if (spawnEnemies) SpawnEnemies();
+        if (spawnPickups) SpawnPickups();
+    }
+
+    private void StartMission(GameObject drone)
+    {
+        if (drone == null || dronePrefab == null) return;
+        var md = new GameObject("MissionDirector").AddComponent<MissionDirector>();
+        md.enemyPrefab = dronePrefab;
+        md.arenaCenter = ArenaBounds.Center;
+        md.spawnRadius = Mathf.Min(enemySpawnDistance, arenaRadius * 0.85f);
+        md.spawnHeight = 12f;
+        md.player = drone.GetComponent<TargetHealth>();
+        md.enemyColor = enemyColor;
+    }
+
+    private void SpawnPickups()
+    {
+        Vector3 center = ArenaBounds.Center;
+        float r = arenaRadius * 0.8f;
+        for (int i = 0; i < ammoPickups; i++) MakePickup(Pickup.Kind.Ammo, center, r);
+        for (int i = 0; i < healthPickups; i++) MakePickup(Pickup.Kind.Health, center, r);
+    }
+
+    private void MakePickup(Pickup.Kind kind, Vector3 center, float r)
+    {
+        Vector2 c = Random.insideUnitCircle * r;
+        var go = new GameObject("Pickup_" + kind);
+        go.transform.position = center + new Vector3(c.x, pickupHeight, c.y);
+        var p = go.AddComponent<Pickup>();
+        p.kind = kind;
+        p.forTeam = TeamPlayer;
+    }
+
+    /// <summary>Spawn Tier-1 AI enemy drones (reuse the player prefab; EnemyDroneAI strips player control).</summary>
+    private void SpawnEnemies()
+    {
+        if (dronePrefab == null) return;
+        Vector3 center = (buildTrack && trackGenerator != null) ? trackGenerator.transform.position : transform.position;
+        float dist = Mathf.Min(enemySpawnDistance, arenaRadius * 0.85f); // stay inside the boundary
+        float baseH = (buildTrack && trackGenerator != null) ? trackGenerator.gateHeight : 6f;
+
+        for (int i = 0; i < enemyCount; i++)
+        {
+            float ang = (i / (float)enemyCount) * Mathf.PI * 2f + 0.3f;
+            Vector3 pos = center
+                        + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * dist
+                        + Vector3.up * (baseH + 6f + Random.Range(0f, 6f));
+
+            var e = Instantiate(dronePrefab, pos, Quaternion.LookRotation((center - pos).normalized, Vector3.up));
+            e.name = "Enemy_" + i;
+
+            var rb = e.GetComponent<Rigidbody>();
+            if (rb != null) { rb.isKinematic = false; rb.linearVelocity = Vector3.zero; rb.angularVelocity = Vector3.zero; }
+
+            var th = e.GetComponent<TargetHealth>();
+            if (th == null) th = e.AddComponent<TargetHealth>();
+            th.team = TeamEnemy;
+            th.maxHealth = enemyHealth;
+            th.targetPriority = 1;      // enemy drones lock before other things
+            th.respawnOnDeath = false;  // enemies die (no respawn)
+
+            TintRenderers(e, enemyColor); // stand out from the player
+
+            e.AddComponent<EnemyDroneAI>();
+        }
+    }
+
+    private void TintRenderers(GameObject go, Color c)
+    {
+        foreach (var r in go.GetComponentsInChildren<Renderer>())
+        {
+            var m = r.material; // per-enemy instance
+            if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+            if (m.HasProperty("_Color")) m.SetColor("_Color", c);
+        }
     }
 
     /// <summary>Procedural shooting-range dummies (sphere + TargetHealth) so weapons have something to hit.</summary>
@@ -85,7 +211,8 @@ public class SinglePlayerBootstrap : MonoBehaviour
             go.GetComponent<Renderer>().sharedMaterial = mat;
 
             go.AddComponent<NetworkObject>();  // keeps TargetHealth (a NetworkBehaviour) happy; inert offline
-            go.AddComponent<TargetHealth>();
+            var th = go.AddComponent<TargetHealth>();
+            th.team = TeamEnemy; // shootable by the player; ignored by enemy drones
         }
     }
 
@@ -114,6 +241,14 @@ public class SinglePlayerBootstrap : MonoBehaviour
             flight.autoLevelAssist = false; // hold attitude for aiming (override any old prefab value)
             if (classData != null) flight.InitializeClassData(classData);
         }
+
+        // Make the player a faction-1 target so enemies can lock/damage it.
+        var ph = drone.GetComponent<TargetHealth>();
+        if (ph == null) ph = drone.AddComponent<TargetHealth>();
+        ph.team = TeamPlayer;
+        ph.maxHealth = playerHealth;
+        ph.freezeOnDeath = missionMode; // death = mission Defeat, not a silent respawn
+
         return drone;
     }
 

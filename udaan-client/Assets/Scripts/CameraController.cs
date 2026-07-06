@@ -100,7 +100,17 @@ public class CameraController : NetworkBehaviour
 
         mainCamera.position = Vector3.Lerp(mainCamera.position, desiredPos, Time.deltaTime * transitionSpeed);
         mainCamera.rotation = Quaternion.Lerp(mainCamera.rotation, desiredRot, Time.deltaTime * transitionSpeed);
+
+        if (s_shake > 0.001f)
+        {
+            mainCamera.position += Random.insideUnitSphere * s_shake;
+            s_shake = Mathf.MoveTowards(s_shake, 0f, Time.deltaTime * 10f);
+        }
     }
 
     public void ToggleView() => isFPV = !isFPV;
+
+    private static float s_shake;
+    /// <summary>Request a camera shake (magnitude in metres). Highest pending value wins; it decays.</summary>
+    public static void Shake(float amount) => s_shake = Mathf.Max(s_shake, amount);
 }

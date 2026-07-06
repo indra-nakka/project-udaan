@@ -112,6 +112,7 @@ public class RaceManager : MonoBehaviour
 
     void Update()
     {
+        if (_gates.Count == 0 && _startGate == null) return; // combat sandbox: no race, don't grab R / touch the HUD
         if (Input.GetKeyDown(KeyCode.R)) { RestartRace(); return; }
         if (_running && _started && !_finished) _raceTime += Time.deltaTime;
         PushHud();
@@ -182,6 +183,7 @@ public class RaceManager : MonoBehaviour
 
     private void PushHud()
     {
+        if (_gates.Count == 0 && _startGate == null) return; // combat sandbox: no race, no race text
         if (!_hudSearched) { _hud = FindFirstObjectByType<TouchFlightHUD>(); _hudSearched = true; }
         if (_hud == null) return;
 

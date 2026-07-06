@@ -20,14 +20,20 @@ public class TargetingSystem : MonoBehaviour
     [Range(0f, 1f)] public float assistStrength = 1f;
     [Tooltip("Assist only applies when the target is within this angle of the view — beyond it you just get the off-screen arrow.")]
     public float assistMaxAngle = 55f;
+    [Tooltip("Player: true (locks on-screen targets via the camera). AI enemies: false (locks by world position around the drone).")]
+    public bool useCameraForView = true;
 
     public Transform CurrentTarget { get; private set; }
 
     private Camera _cam;
     private Camera Cam { get { if (_cam == null) _cam = Camera.main; return _cam; } }
+    private TargetHealth _ownHealth;
+    private int MyTeam { get { if (_ownHealth == null) _ownHealth = GetComponent<TargetHealth>(); return _ownHealth != null ? _ownHealth.team : 0; } }
     private float _nextScan;
     private readonly List<Transform> _onScreen = new List<Transform>(); // in-range AND visible, distance-sorted
     private bool _manual;
+    private readonly Dictionary<Transform, float> _sortKeys = new Dictionary<Transform, float>(); // reused each scan
+    private System.Comparison<Transform> _cmp;                                                     // single cached delegate
 
     void Update()
     {
@@ -57,16 +63,19 @@ public class TargetingSystem : MonoBehaviour
     private void RefreshOnScreen()
     {
         _onScreen.Clear();
-        Camera cam = Cam;
+        Camera cam = useCameraForView ? Cam : null;
         Vector3 origin = transform.position;
         Vector3 camPos = cam != null ? cam.transform.position : origin;
         Vector3 camFwd = cam != null ? cam.transform.forward : transform.forward;
 
-        var all = Object.FindObjectsByType<TargetHealth>(FindObjectsSortMode.None);
+        int myTeam = MyTeam;
+        var all = TargetHealth.All; // self-maintained registry (no per-scan allocation)
         foreach (var t in all)
         {
             if (t == null || !t.gameObject.activeInHierarchy) continue;
+            if (!t.targetable) continue;                      // stealth / spawn protection
             if (t.transform.root == transform.root) continue; // never lock ourselves
+            if (t.team == myTeam) continue;                   // only lock other factions
             if (Vector3.Distance(origin, t.transform.position) > lockRange) continue;
             if (cam != null)
             {
@@ -77,14 +86,19 @@ public class TargetingSystem : MonoBehaviour
         }
 
         // Priority: (1) targetPriority (enemy class), (2) closest to camera center, (3) distance.
-        float SortKey(Transform t)
+        // Precompute each key ONCE (no GetComponent inside the O(n log n) comparator) and reuse one delegate.
+        _sortKeys.Clear();
+        for (int i = 0; i < _onScreen.Count; i++)
         {
-            int pr = 0; var th = t.GetComponent<TargetHealth>(); if (th != null) pr = th.targetPriority;
+            Transform t = _onScreen[i];
+            var th = t.GetComponent<TargetHealth>();
+            int pr = th != null ? th.targetPriority : 0;
             float angle = Vector3.Angle(camFwd, t.position - camPos); // centeredness
             float dist = Vector3.Distance(origin, t.position);
-            return -pr * 1_000_000f + angle * 1000f + dist;
+            _sortKeys[t] = -pr * 1_000_000f + angle * 1000f + dist;
         }
-        _onScreen.Sort((a, b) => SortKey(a).CompareTo(SortKey(b)));
+        if (_cmp == null) _cmp = (a, b) => _sortKeys[a].CompareTo(_sortKeys[b]);
+        _onScreen.Sort(_cmp);
     }
 
     /// <summary>Cycle among on-screen targets (dir +1/-1). Manual lock holds until it leaves radar range.</summary>
@@ -96,6 +110,12 @@ public class TargetingSystem : MonoBehaviour
         CurrentTarget = _onScreen[idx];
         _manual = true;
     }
+
+    /// <summary>Force the lock onto a specific target (AI retaliation). Holds until released or invalid.</summary>
+    public void ForceTarget(Transform t) { if (t != null) { CurrentTarget = t; _manual = true; } }
+
+    /// <summary>Release a forced lock so auto-acquisition resumes.</summary>
+    public void ReleaseForcedTarget() { _manual = false; }
 
     /// <summary>Bend a base fire direction fully onto the locked target (if it's within the assist angle).</summary>
     public Vector3 AimDir(Vector3 baseDir, Vector3 fromPos)

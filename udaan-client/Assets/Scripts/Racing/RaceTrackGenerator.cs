@@ -9,6 +9,8 @@ using UnityEngine;
 public class RaceTrackGenerator : MonoBehaviour
 {
     [Header("Circuit Layout")]
+    [Tooltip("Build the hoop circuit. Off = combat sandbox (ground only, no rings).")]
+    public bool buildGates = true;
     public int gateCount = 8;
     public float circuitRadius = 35f;
     public float gateHeight = 4f;
@@ -37,12 +39,21 @@ public class RaceTrackGenerator : MonoBehaviour
     void Awake()
     {
         if (raceManager == null) raceManager = GetOrCreateManager();
-        _hoopMesh = BuildTorus(holeRadius, tubeRadius, ringSegments, tubeSegments);
-        _startMesh = BuildTorus(holeRadius * startHoleScale, tubeRadius * 1.2f, ringSegments, tubeSegments);
         _hoopMat = CreateHoopMaterial();
 
         if (createGroundPlane) BuildGround();
-        BuildGates();
+
+        if (buildGates)
+        {
+            _hoopMesh = BuildTorus(holeRadius, tubeRadius, ringSegments, tubeSegments);
+            _startMesh = BuildTorus(holeRadius * startHoleScale, tubeRadius * 1.2f, ringSegments, tubeSegments);
+            BuildGates();
+        }
+        else
+        {
+            // Combat sandbox: no rings. Default a spawn pose just behind the arena centre.
+            StartPose = new Pose(transform.position + Vector3.up * gateHeight - Vector3.forward * 8f, Quaternion.identity);
+        }
     }
 
     private RaceManager GetOrCreateManager()
