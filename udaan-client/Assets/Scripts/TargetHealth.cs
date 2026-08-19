@@ -127,7 +127,7 @@ public class TargetHealth : NetworkBehaviour
     {
         Debug.Log($"[DEATH] {name} (team {team}) destroyed");
         OnDeath?.Invoke(this);
-        Vfx.Explode(transform.position, Mathf.Max(transform.localScale.x, 1f) * 1.5f, new Color(1f, 0.6f, 0.15f));
+        Vfx.Poof(transform.position, Mathf.Max(transform.localScale.x, 1f) * 1.3f);   // kid-tone cartoon defeat (smoke + spiral)
 
         // Player defeat: stay put at 0 HP; the MissionDirector shows Defeat + restart.
         if (freezeOnDeath) { currentHealth = 0f; return; }

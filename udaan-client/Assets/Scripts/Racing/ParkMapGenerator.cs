@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Greybox children's-park map. Procedurally scatters primitive props (trees, slides, swings, jungle
-/// gyms, sandboxes, see-saws) + a perimeter fence to give the combat sandbox cover, verticality and
-/// landmarks. Everything is a colored primitive with a collider — art comes later on the same layout.
+/// Children's-park map. Scatters park models (or greybox primitives as fallback) so the combat sandbox
+/// has cover, verticality and landmarks. Props are placed WITHOUT overlapping — each spawned model's
+/// footprint is measured and the generator rejects positions that collide with already-placed props.
 /// </summary>
 public class ParkMapGenerator : MonoBehaviour
 {
@@ -12,19 +13,31 @@ public class ParkMapGenerator : MonoBehaviour
     public float radius = 100f;
     [Tooltip("Keep props out of this radius around the spawn/center.")]
     public float clearCenter = 14f;
+    [Tooltip("Global size multiplier for all park models (2 = double).")]
+    public float propScale = 2f;
 
-    [Header("Counts")]
+    [Header("Counts (sparse — props are placed without overlapping)")]
     public int trees = 26;
     public int slides = 6;
     public int swings = 6;
     public int gyms = 5;
     public int sandboxes = 4;
     public int seesaws = 6;
-    [Tooltip("Tall climbing-fort towers (cover well above ground).")]
-    public int towers = 11;
-    [Tooltip("Connected wall runs (each several segments) that form maze corridors at altitude.")]
-    public int walls = 14;
+    [Tooltip("Big combined multi-slide structures (the hero piece).")]
+    public int playsets = 3;
+    public int merries = 4;
+    public int tyreSwings = 4;
+    [Header("New stations (from the reference photos)")]
+    public int rockWalls = 3;
+    public int tyreWalls = 3;
+    public int trampolines = 3;
+    public int benches = 5;
+    public int animalMerries = 2;
+    [Tooltip("Giant shade-trees — tall cover / landmarks. The large props ARE the maze.")]
+    public int towers = 14;
     public bool perimeterFence = true;
+    [Tooltip("Extra gap (m) kept between any two placed props.")]
+    public float propSpacing = 5f;
 
     // Playful palette.
     private static readonly Color Bark = new Color(0.42f, 0.27f, 0.14f);
@@ -38,20 +51,34 @@ public class ParkMapGenerator : MonoBehaviour
 
     void Awake()
     {
-        for (int i = 0; i < trees; i++) BuildTree(RandomGroundPos());
+        // Place BIG props first so they claim open ground; small props then fill the gaps around them.
+        for (int i = 0; i < playsets; i++) BuildPlayset(RandomGroundPos());
+        for (int i = 0; i < towers; i++) BuildTower(RandomGroundPos());
         for (int i = 0; i < slides; i++) BuildSlide(RandomGroundPos());
-        for (int i = 0; i < swings; i++) BuildSwing(RandomGroundPos());
         for (int i = 0; i < gyms; i++) BuildGym(RandomGroundPos());
         for (int i = 0; i < sandboxes; i++) BuildSandbox(RandomGroundPos());
+        for (int i = 0; i < merries; i++) BuildMerry(RandomGroundPos());
+        for (int i = 0; i < animalMerries; i++) BuildProp(ParkProps.AnimalMerry, RandomGroundPos());
+        for (int i = 0; i < tyreWalls; i++) BuildProp(ParkProps.TyreWall, RandomGroundPos());
+        for (int i = 0; i < swings; i++) BuildSwing(RandomGroundPos());
         for (int i = 0; i < seesaws; i++) BuildSeesaw(RandomGroundPos());
-        for (int i = 0; i < towers; i++) BuildTower(RandomGroundPos());
-        for (int i = 0; i < walls; i++) BuildWallCluster(RandomGroundPos());
+        for (int i = 0; i < rockWalls; i++) BuildProp(ParkProps.RockWall, RandomGroundPos());
+        for (int i = 0; i < tyreSwings; i++) BuildTyreSwing(RandomGroundPos());
+        for (int i = 0; i < trampolines; i++) BuildProp(ParkProps.Trampoline, RandomGroundPos());
+        for (int i = 0; i < trees; i++) BuildTree(RandomGroundPos());
+        for (int i = 0; i < benches; i++) BuildProp(ParkProps.Bench, RandomGroundPos());
         if (perimeterFence) BuildFence();
     }
 
-    // Tall climbing fort: gives cover and platforms far above the ground.
+    // Tall cover far above the ground. With a tree model → a giant park shade-tree; else a greybox fort.
     private void BuildTower(Vector3 p)
     {
+        if (ParkProps.Tree != null)
+        {
+            // Giant landmark shade-tree. (SpawnProp also multiplies by propScale, so this stays sane at 2×.)
+            SpawnProp(ParkProps.Tree, p, RandomYaw(), Random.Range(2.4f, 3.8f));
+            return;
+        }
         Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
         float h = Random.Range(30f, 52f);
         float w = Random.Range(4f, 6.5f);
@@ -68,26 +95,6 @@ public class ParkMapGenerator : MonoBehaviour
         Prim(PrimitiveType.Cube, p + rot * new Vector3(0f, h, 0f), new Vector3(w * 2.4f, 0.4f, w * 2.4f), rot, Red); // roof
     }
 
-    // A connected run of tall wall segments that turns ~90° between segments → maze corridors.
-    private void BuildWallCluster(Vector3 start)
-    {
-        int segs = Random.Range(3, 6);
-        Vector3 cursor = start;
-        float heading = Random.Range(0f, 360f);
-        float h = Random.Range(26f, 46f); // consistent height per run
-
-        for (int i = 0; i < segs; i++)
-        {
-            Quaternion rot = Quaternion.Euler(0f, heading, 0f);
-            Vector3 fwd = rot * Vector3.forward;
-            float len = Random.Range(14f, 26f);
-            Vector3 center = cursor + fwd * (len * 0.5f) + Vector3.up * (h * 0.5f);
-            Prim(PrimitiveType.Cube, center, new Vector3(1.4f, h, len), rot, Green); // thin X, tall Y, long Z (along run)
-            cursor += fwd * len;
-            heading += (Random.value < 0.5f ? 90f : -90f) + Random.Range(-15f, 15f); // corner
-        }
-    }
-
     private Vector3 RandomGroundPos()
     {
         Vector2 c = Random.insideUnitCircle * radius;
@@ -95,9 +102,73 @@ public class ParkMapGenerator : MonoBehaviour
         return center + new Vector3(c.x, 0f, c.y);
     }
 
+    private Quaternion RandomYaw() => Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+
+    // Placed props as (ground XZ position, footprint radius) so new props can avoid overlapping them.
+    private readonly List<(Vector3 pos, float r)> _placed = new List<(Vector3, float)>();
+
+    // Instantiate a park model, find a non-overlapping spot, sit its base on the ground, add collision.
+    private void SpawnProp(GameObject model, Vector3 p, Quaternion rot, float scale = 1f)
+    {
+        var go = Instantiate(model);
+        go.transform.SetParent(transform, false);
+        go.transform.SetPositionAndRotation(p, rot);
+        go.transform.localScale = Vector3.one * (scale * propScale);
+
+        float radius = FootprintRadius(go);          // measure this prop's XZ half-size
+        Vector3 pos = FindOpenSpot(p, radius);        // reroll until it doesn't collide with placed props
+        go.transform.position = pos;
+
+        var rends = go.GetComponentsInChildren<Renderer>();   // models pivot at bounds-centre → drop base to ground
+        if (rends.Length > 0)
+        {
+            Bounds b = rends[0].bounds;
+            for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+            go.transform.position += Vector3.up * (pos.y - b.min.y);
+        }
+        AddColliders(go);
+        _placed.Add((new Vector3(pos.x, 0f, pos.z), radius));
+    }
+
+    private float FootprintRadius(GameObject go)
+    {
+        var rends = go.GetComponentsInChildren<Renderer>();
+        if (rends.Length == 0) return 2f;
+        Bounds b = rends[0].bounds;
+        for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+        return Mathf.Max(b.extents.x, b.extents.z) * 1.12f;   // small inflation so canopies/edges don't graze
+    }
+
+    // Try the first candidate, then re-roll random ground positions until one clears every placed prop.
+    private Vector3 FindOpenSpot(Vector3 first, float radius)
+    {
+        Vector3 cand = first;
+        for (int t = 0; t < 60; t++)
+        {
+            bool ok = true;
+            for (int i = 0; i < _placed.Count; i++)
+            {
+                float minD = radius + _placed[i].r + propSpacing;
+                float dx = cand.x - _placed[i].pos.x, dz = cand.z - _placed[i].pos.z;
+                if (dx * dx + dz * dz < minD * minD) { ok = false; break; }
+            }
+            if (ok) return cand;
+            cand = RandomGroundPos();
+        }
+        return cand;   // gave up after 60 tries — place anyway (rare, densest fill)
+    }
+
+    private void AddColliders(GameObject go)
+    {
+        foreach (var mf in go.GetComponentsInChildren<MeshFilter>())
+            if (mf.sharedMesh != null && mf.GetComponent<MeshCollider>() == null)
+                mf.gameObject.AddComponent<MeshCollider>();
+    }
+
     // ---- props ----
     private void BuildTree(Vector3 p)
     {
+        if (ParkProps.Tree != null) { SpawnProp(ParkProps.Tree, p, RandomYaw()); return; }
         float h = Random.Range(4f, 8f);
         Prim(PrimitiveType.Cylinder, p + Vector3.up * (h * 0.5f), new Vector3(0.8f, h * 0.5f, 0.8f), Quaternion.identity, Bark);
         Prim(PrimitiveType.Sphere, p + Vector3.up * (h + 0.5f), Vector3.one * Random.Range(3.2f, 5f), Quaternion.identity, Leaf);
@@ -106,6 +177,7 @@ public class ParkMapGenerator : MonoBehaviour
     private void BuildSlide(Vector3 p)
     {
         Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        if (ParkProps.Slide != null) { SpawnProp(ParkProps.Slide, p, rot, 2f); return; }   // extra 2× (art direction)
         Prim(PrimitiveType.Cube, p + rot * new Vector3(0f, 3f, -2f), new Vector3(3.5f, 0.4f, 3.5f), rot, Blue);           // top platform
         Prim(PrimitiveType.Cube, p + rot * new Vector3(-1.3f, 1.5f, -2f), new Vector3(0.3f, 3f, 0.3f), rot, Metal);       // post
         Prim(PrimitiveType.Cube, p + rot * new Vector3(1.3f, 1.5f, -2f), new Vector3(0.3f, 3f, 0.3f), rot, Metal);        // post
@@ -115,6 +187,7 @@ public class ParkMapGenerator : MonoBehaviour
     private void BuildSwing(Vector3 p)
     {
         Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        if (ParkProps.Swing != null) { SpawnProp(ParkProps.Swing, p, rot); return; }
         // A-frame posts + top bar
         Prim(PrimitiveType.Cube, p + rot * new Vector3(-2.5f, 2.5f, 0f), new Vector3(0.35f, 5f, 0.35f), rot * Quaternion.Euler(0f, 0f, 12f), Red);
         Prim(PrimitiveType.Cube, p + rot * new Vector3(2.5f, 2.5f, 0f), new Vector3(0.35f, 5f, 0.35f), rot * Quaternion.Euler(0f, 0f, -12f), Red);
@@ -124,9 +197,18 @@ public class ParkMapGenerator : MonoBehaviour
         Prim(PrimitiveType.Cube, p + rot * new Vector3(1.2f, 1.2f, 0f), new Vector3(1f, 0.2f, 0.6f), rot, Yellow);
     }
 
+    // New Indian-park stations (model-only; additive — no primitive fallback needed).
+    private void BuildProp(GameObject model, Vector3 p) { if (model != null) SpawnProp(model, p, RandomYaw()); }
+    private void BuildMerry(Vector3 p)      { if (ParkProps.Merry != null)     SpawnProp(ParkProps.Merry, p, RandomYaw()); }
+    private void BuildTyreSwing(Vector3 p)  { if (ParkProps.TyreSwing != null) SpawnProp(ParkProps.TyreSwing, p, RandomYaw()); }
+    // Playset is huge — give it another 2× on top of propScale (per the art direction).
+    private void BuildPlayset(Vector3 p)    { if (ParkProps.Playset != null)   SpawnProp(ParkProps.Playset, p, RandomYaw(), 2f); }
+
     private void BuildGym(Vector3 p)
     {
         Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        if (ParkProps.Dome != null) { SpawnProp(ParkProps.Dome, p, rot); return; }   // dome climber
+        if (ParkProps.Gym != null)  { SpawnProp(ParkProps.Gym, p, rot); return; }
         float s = 4f;
         // four corner posts + top frame (a climbable cube)
         Vector3[] corners = { new Vector3(-s, 0f, -s), new Vector3(s, 0f, -s), new Vector3(-s, 0f, s), new Vector3(s, 0f, s) };
@@ -141,6 +223,7 @@ public class ParkMapGenerator : MonoBehaviour
 
     private void BuildSandbox(Vector3 p)
     {
+        if (ParkProps.Sandbox != null) { SpawnProp(ParkProps.Sandbox, p, RandomYaw()); return; }
         float s = 5f, wall = 0.9f;
         Prim(PrimitiveType.Cube, p + new Vector3(0f, wall * 0.5f, s), new Vector3(s * 2f, wall, 0.5f), Quaternion.identity, Yellow);
         Prim(PrimitiveType.Cube, p + new Vector3(0f, wall * 0.5f, -s), new Vector3(s * 2f, wall, 0.5f), Quaternion.identity, Yellow);
@@ -151,6 +234,7 @@ public class ParkMapGenerator : MonoBehaviour
     private void BuildSeesaw(Vector3 p)
     {
         Quaternion rot = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+        if (ParkProps.Seesaw != null) { SpawnProp(ParkProps.Seesaw, p, rot); return; }
         Prim(PrimitiveType.Cube, p + Vector3.up * 0.6f, new Vector3(0.8f, 1.2f, 0.8f), rot, Red);                         // fulcrum
         Prim(PrimitiveType.Cube, p + Vector3.up * 1.2f, new Vector3(0.6f, 0.2f, 6f), rot * Quaternion.Euler(9f, 0f, 0f), Green); // plank
     }

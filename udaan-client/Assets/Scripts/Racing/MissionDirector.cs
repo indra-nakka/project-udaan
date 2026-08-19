@@ -13,10 +13,13 @@ using UnityEngine;
 public class MissionDirector : MonoBehaviour
 {
     public enum Phase { Intro, Wave, Capture, Defend, Upgrade, Boss, Victory, Defeat }
-    public enum Difficulty { Recruit, Pilot, Ace }
+    public enum Difficulty { Easy, Medium, Hard, Pain }
 
     [Header("Difficulty")]
-    public Difficulty difficulty = Difficulty.Pilot;   // data-driven; a menu can set this later (#81)
+    public Difficulty difficulty = Difficulty.Medium;   // set by the start menu (#81)
+
+    /// <summary>Fired once at mission end (true = victory). DemoFlow shows the kid results screen.</summary>
+    public static event System.Action<bool> OnMissionEnd;
 
     // Injected by the bootstrap.
     [HideInInspector] public GameObject enemyPrefab;
@@ -48,9 +51,7 @@ public class MissionDirector : MonoBehaviour
     public int defendMaxEnemies = 5;
     [Tooltip("Core self-repairs when no enemy is within this radius of it...")]
     public float coreSafeRadius = 45f;
-    [Tooltip("...for this long (seconds) with no attacker nearby, then heals at coreRegenRate HP/s.")]
-    public float coreRegenDelay = 2.5f;   // (legacy — regen is now continuous; kept for tuning reference)
-    public float coreRegenRate = 55f;     // slightly above ONE attacker's DPS: a straggler is survivable, a push is not
+    public float coreRegenRate = 55f;     // continuous; slightly above ONE attacker's DPS (straggler survivable, push not)
 
     [Header("Player")]
     public int startingLives = 3;
@@ -81,10 +82,10 @@ public class MissionDirector : MonoBehaviour
     private const int PlayerTeam = 1, EnemyTeam = 2;
 
     // Difficulty multipliers (applied at SPAWN time only — player-damage scaling deferred to avoid restart stacking).
-    private float EnemyHpMul  => difficulty == Difficulty.Recruit ? 0.8f : difficulty == Difficulty.Ace ? 1.35f : 1f;
-    private float EnemyDmgMul => difficulty == Difficulty.Recruit ? 0.7f : difficulty == Difficulty.Ace ? 1.4f  : 1f;
-    private float CoreHpMul   => difficulty == Difficulty.Recruit ? 1.3f : difficulty == Difficulty.Ace ? 0.8f  : 1f;
-    private int   LivesFor    => difficulty == Difficulty.Recruit ? startingLives + 1 : difficulty == Difficulty.Ace ? Mathf.Max(1, startingLives - 1) : startingLives;
+    private float EnemyHpMul  => difficulty == Difficulty.Easy ? 0.8f : difficulty == Difficulty.Hard ? 1.35f : difficulty == Difficulty.Pain ? 1.7f : 1f;
+    private float EnemyDmgMul => difficulty == Difficulty.Easy ? 0.7f : difficulty == Difficulty.Hard ? 1.4f  : difficulty == Difficulty.Pain ? 1.9f : 1f;
+    private float CoreHpMul   => difficulty == Difficulty.Easy ? 1.3f : difficulty == Difficulty.Hard ? 0.8f  : difficulty == Difficulty.Pain ? 0.6f : 1f;
+    private int   LivesFor    => difficulty == Difficulty.Easy ? startingLives + 1 : difficulty == Difficulty.Hard ? Mathf.Max(1, startingLives - 1) : difficulty == Difficulty.Pain ? 1 : startingLives;
 
     void Start() { StartCoroutine(RunMission()); }
 
@@ -179,12 +180,17 @@ public class MissionDirector : MonoBehaviour
                 _stats.livesRemaining = Mathf.Max(0, _lives);
                 _stats.outpostsCaptured = CapturedCount();
                 _stats.Print();          // scorecard to Console
+                OnMissionEnd?.Invoke(!_defeated);   // → DemoFlow results screen (reads MissionStats.Active before it clears)
                 MissionStats.Active = null;
             }
             phase = _defeated ? Phase.Defeat : Phase.Victory;
             ClearAll();
-            Objective(_defeated ? "DEFEATED — press R to retry" : "VICTORY!  Sky Sentinel down — press R to replay");
-            while (!Input.GetKeyDown(KeyCode.R)) yield return null;
+            if (OnMissionEnd == null)   // legacy scene with no results UI → keep the R-to-replay
+            {
+                Objective(_defeated ? "DEFEATED — press R to retry" : "VICTORY! — press R to replay");
+                while (!Input.GetKeyDown(KeyCode.R)) yield return null;
+            }
+            else yield break;   // DemoFlow's results screen owns replay (via scene reload)
         }
     }
 
@@ -441,6 +447,7 @@ public class MissionDirector : MonoBehaviour
 
     private void SpawnBoss()
     {
+        Music.Boss();   // switch BGM to the tense boss theme
         Vector3 pos = arenaCenter + Vector3.forward * (spawnRadius * 0.5f) + Vector3.up * (spawnHeight + 8f);
         var e = CombatSpawner.Enemy(enemyPrefab, pos, Quaternion.identity, bossHealth * EnemyHpMul, bossColor, 2, true);
         if (e != null)

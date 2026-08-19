@@ -19,6 +19,31 @@ public static class Vfx
         Sfx.Hit(pos);
     }
 
+    /// <summary>Kid-tone "defeat": comedic smoke puffs + a little wreck that spins & spirals down. No fiery gore.</summary>
+    public static void Poof(Vector3 pos, float size)
+    {
+        for (int i = 0; i < 4; i++)   // grey smoke puffs
+        {
+            Vector3 p = pos + Random.insideUnitSphere * size * 0.4f;
+            Flash(p, size * Random.Range(0.6f, 1.1f), new Color(0.82f, 0.82f, 0.85f), Random.Range(0.4f, 0.7f));
+        }
+        var husk = GameObject.CreatePrimitive(PrimitiveType.Cube);   // the tumbling wreck
+        var col = husk.GetComponent<Collider>();
+        if (col != null) Object.Destroy(col);
+        husk.name = "Wreck";
+        husk.transform.position = pos;
+        husk.transform.localScale = Vector3.one * size * 0.4f;
+        var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        Color c = new Color(0.3f, 0.3f, 0.33f);
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+        if (m.HasProperty("_Color")) m.SetColor("_Color", c);
+        husk.GetComponent<Renderer>().sharedMaterial = m;
+        husk.AddComponent<DeathSpiral>();
+
+        Sfx.Explosion(pos);   // TODO(#93): swap for a cartoon "poof"/"boing" clip
+        ShakeByDistance(pos, 0.3f, 60f);
+    }
+
     private static void Flash(Vector3 pos, float radius, Color color, float life)
     {
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -74,5 +99,25 @@ public class ExpandFade : MonoBehaviour
             _mat.color = c;
             if (_mat.HasProperty("_BaseColor")) _mat.SetColor("_BaseColor", c);
         }
+    }
+}
+
+/// <summary>A little wreck that pops up, spins wildly, arcs down and shrinks away — cartoon "defeat".</summary>
+public class DeathSpiral : MonoBehaviour
+{
+    private float _t;
+    private Vector3 _vel;
+
+    void Start() { _vel = new Vector3(Random.Range(-1.2f, 1.2f), 2.2f, Random.Range(-1.2f, 1.2f)); }
+
+    void Update()
+    {
+        _t += Time.deltaTime;
+        _vel.y -= 12f * Time.deltaTime;                                   // gravity
+        transform.position += _vel * Time.deltaTime
+                            + new Vector3(Mathf.Cos(_t * 12f), 0f, Mathf.Sin(_t * 12f)) * 0.06f; // spiral wobble
+        transform.Rotate(360f * Time.deltaTime, 540f * Time.deltaTime, 180f * Time.deltaTime);   // tumble
+        transform.localScale *= (1f - Time.deltaTime * 0.9f);            // shrink away
+        if (_t > 1.3f || transform.localScale.x < 0.05f) Destroy(gameObject);
     }
 }

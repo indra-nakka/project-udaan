@@ -6,7 +6,22 @@ _Session 064. Two lightweight specs: the audio plan (currently procedural SFX; a
 
 ## Part A — Audio design
 
-**Current state:** procedurally synthesized SFX (bullet, explosion, hit) via `Sfx.cs`. No authored audio/music.
+**Current state (session-068):** procedural SFX via `Sfx.cs` **and procedural music via `Music.cs`**. Three code-synthesized looping BGM moods: **Menu** (calm major pentatonic), **Battle** (mid-tempo *melodic flight* theme — airy, pad-backed, not an arcade pump), **Boss** (SLOW, sparse, atmospheric minor with a sustained low drone + wide vibrato — tension over speed). Layers: bass + sustained pad + vibrato'd melody + optional drone. Lazily built + cached, crossfaded on one persistent 2D `AudioSource` at ~0.34 gain (under the SFX). Cued by `DemoFlow` (menu / play / results) and `MissionDirector.SpawnBoss`. Boss-laugh is still the procedural `Sfx.BossLaugh` placeholder. No authored/recorded audio yet — announcer VO is deferred (needs voice assets).
+
+**How to tweak the music (no audio software needed):** open `Music.cs` — the top holds three `Song` objects (`MENU` / `BATTLE` / `BOSS`) with a full field guide in the class comment. The quick knobs:
+
+| Want | Change |
+|------|--------|
+| Faster / slower | `bpm` |
+| Different key / darker | `rootHz` (110=A2 dark, 130.81=C3, 146.83=D3…) |
+| Happier / sadder | `minor` + `scale` (major-pentatonic vs natural-minor arrays) |
+| A new tune | `melody` array — one scale-degree per beat, `-1` = rest; keep length = 4 × number of chords |
+| Chord changes | `progression` (chord root per bar, semitones from key) |
+| Warmer / atmospheric | `pad` (0 = off) and lower `decay` (sustained vs plucky) |
+| More expressive | `vibrato` (0 = flat, ~0.2 = singing) |
+| Softer/rounder vs brighter | `tri` (triangle) false = pure sine |
+
+Edit, save, press Play (the mood rebuilds on next entry). If you want a mood to re-synth without restarting Unity, it's cached per session — a code recompile clears it.
 
 **Categories & intent:**
 

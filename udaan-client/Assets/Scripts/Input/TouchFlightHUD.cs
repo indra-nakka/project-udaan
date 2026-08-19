@@ -569,8 +569,11 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
         }
     }
 
-    void OnEnable() { TargetHealth.OnAnyDamaged += HandleDamaged; }
-    void OnDisable() { TargetHealth.OnAnyDamaged -= HandleDamaged; }
+    void OnEnable() { TargetHealth.OnAnyDamaged += HandleDamaged; MissionDirector.OnMissionEnd += HandleMissionEnd; }
+    void OnDisable() { TargetHealth.OnAnyDamaged -= HandleDamaged; MissionDirector.OnMissionEnd -= HandleMissionEnd; }
+
+    // Hide the whole gameplay HUD when the results screen takes over.
+    private void HandleMissionEnd(bool victory) { if (_canvas != null) _canvas.gameObject.SetActive(false); }
 
     private void HandleDamaged(TargetHealth victim, int attackerTeam, float amount, bool fromPlayer)
     {
@@ -1178,9 +1181,14 @@ public class TouchFlightHUD : MonoBehaviour, IFlightInput
     private static float Cross(Vector2 p1, Vector2 p2, Vector2 p3)
         => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
 
+    private static Font _hudFont;
     private Font ResolveFont()
     {
         if (uiFont != null) return uiFont;
+        // Playful rounded/comic OS font for the whole HUD (Windows has Comic Sans MS); bundle a font for production.
+        if (_hudFont == null)
+            _hudFont = Font.CreateDynamicFontFromOSFont(new[] { "Comic Sans MS", "Baloo 2", "Chalkboard SE", "Verdana" }, 24);
+        if (_hudFont != null) return _hudFont;
         Font f = null;
         try { f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); } catch { }
         if (f == null) { try { f = Resources.GetBuiltinResource<Font>("Arial.ttf"); } catch { } }

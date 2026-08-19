@@ -1,6 +1,6 @@
 # Udaan — Game Design Document
 
-_Living document · consolidated session 063. Reflects the game as actually built (the "Sky Sentinel" vertical slice) plus near-term direction. Pairs with `🎮 Combat & Game Vision.md` (vision) and `architecture/` (implementation)._
+_**⭐ SINGLE SOURCE OF TRUTH** (session 065 pivot). If any other doc disagrees, this wins. Entry map: `UDAAN_ROUTER.md`. Current audience: **kids 5–10, learn + play.** Legacy PvP/MOBA docs are reference-only. Pairs with `Design-Garage-and-Learning.md`, `Design-Weapons-and-Tools.md`, `Art-Direction.md`._
 
 ---
 

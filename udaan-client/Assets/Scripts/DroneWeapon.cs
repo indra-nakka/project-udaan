@@ -115,14 +115,14 @@ public class DroneWeapon : NetworkBehaviour
         if (f.firePrimary && Time.time >= _nextBullet && (infiniteAmmo || (!_reloading && _bulletMag > 0)))
         {
             _nextBullet = Time.time + bulletRate;
-            Fire(_bulletPool, 0.12f, new Color(1f, 0.9f, 0.4f), bulletSpeed, bulletDamage, bulletLife, 0f, f);
+            Fire(_bulletPool, 0.17f, new Color(0.35f, 0.8f, 1f), bulletSpeed, bulletDamage, bulletLife, 0f, f);   // foam dart (cyan)
             if (useCameraAim) Sfx.Bullet(muzzlePoint.position); // player only (avoid enemy spam)
             if (!infiniteAmmo && --_bulletMag <= 0) { _reloading = true; _reloadDoneAt = Time.time + reloadTime; }
         }
         if (f.fireSecondary && Time.time >= _nextRocket && (infiniteAmmo || _rockets > 0))
         {
             _nextRocket = Time.time + rocketRate;
-            Fire(_rocketPool, 0.3f, new Color(1f, 0.4f, 0.2f), rocketSpeed, rocketDamage, rocketLife, rocketSplash, f);
+            Fire(_rocketPool, 0.34f, new Color(0.3f, 0.85f, 0.35f), rocketSpeed, rocketDamage, rocketLife, rocketSplash, f);   // slime glob (green)
             if (useCameraAim) Sfx.Rocket(muzzlePoint.position);
             if (!infiniteAmmo) _rockets--;
         }

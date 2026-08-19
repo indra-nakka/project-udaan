@@ -209,6 +209,25 @@ public class EnemyDroneAI : MonoBehaviour, IFlightInput
     {
         const float look = 20f;
 
+        // 0) GROUND avoidance — hold a minimum altitude so drones don't scrape/stick to the floor.
+        {
+            int gn = Physics.RaycastNonAlloc(transform.position, Vector3.down, _rayBuf, 6f);
+            float groundDist = 999f;
+            for (int i = 0; i < gn; i++)
+            {
+                var h = _rayBuf[i];
+                if (h.collider.transform.root == transform.root) continue;             // ourselves
+                if (h.collider.GetComponentInParent<TargetHealth>() != null) continue; // another drone
+                if (h.distance < groundDist) groundDist = h.distance;                  // real ground/terrain
+            }
+            const float minAlt = 4f;
+            if (groundDist < minAlt)
+            {
+                s.altitude = Mathf.Max(s.altitude, 1f - groundDist / minAlt); // vertical thrust up
+                if (groundDist < 1.5f) s.thrust = Mathf.Min(s.thrust, 0f);    // stop driving down into it
+            }
+        }
+
         // 1) Stuck recovery. SphereCast can't see a wall it's already overlapping, so when we're commanded
         //    to move yet barely moving next to geometry, we're wedged — back out, spin and climb for a beat.
         if (Time.time >= _unstuckUntil && _rb != null)
@@ -225,7 +244,8 @@ public class EnemyDroneAI : MonoBehaviour, IFlightInput
             s.thrust = -0.7f;             // reverse out
             s.strafe = _unstuckYaw * 0.7f;
             s.yaw = _unstuckYaw;          // spin away
-            s.pitch = 0.5f;               // and climb
+            s.altitude = 1f;              // climb straight up (vertical thrust) to escape the floor/wall
+            s.pitch = 0.3f;
             return;
         }
 

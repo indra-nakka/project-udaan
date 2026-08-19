@@ -117,11 +117,35 @@ public class TargetingSystem : MonoBehaviour
     /// <summary>Release a forced lock so auto-acquisition resumes.</summary>
     public void ReleaseForcedTarget() { _manual = false; }
 
-    /// <summary>Bend a base fire direction fully onto the locked target (if it's within the assist angle).</summary>
+    [Header("Lead / prediction")]
+    [Tooltip("Aim where the target WILL be (based on its velocity + projectile speed), so moving targets get hit.")]
+    public bool leadTargets = true;
+    [Tooltip("Speed of the projectile the assist is helping (match DroneWeapon.bulletSpeed).")]
+    public float projectileSpeed = 220f;
+    private Rigidbody _ownRb;
+
+    /// <summary>World point the shot should aim at (lead-predicted). Exposed so the HUD can mark it.</summary>
+    public Vector3 AimPoint { get; private set; }
+
+    /// <summary>Bend a base fire direction onto the locked target — LEADING it so moving targets are hit.</summary>
     public Vector3 AimDir(Vector3 baseDir, Vector3 fromPos)
     {
         if (CurrentTarget == null) return baseDir;
-        Vector3 toTarget = (CurrentTarget.position - fromPos).normalized;
+
+        Vector3 tpos = CurrentTarget.position;
+        if (leadTargets && projectileSpeed > 0.1f)
+        {
+            var trb = CurrentTarget.GetComponent<Rigidbody>();
+            if (_ownRb == null) _ownRb = GetComponent<Rigidbody>();
+            Vector3 rel = (trb != null ? trb.linearVelocity : Vector3.zero) - (_ownRb != null ? _ownRb.linearVelocity : Vector3.zero);
+            float t = 0f;
+            for (int i = 0; i < 2; i++)  // solve time-to-hit twice for a good lead estimate
+                t = Vector3.Distance(fromPos, tpos + rel * t) / projectileSpeed;
+            tpos += rel * t;             // predicted intercept point
+        }
+        AimPoint = tpos;
+
+        Vector3 toTarget = (tpos - fromPos).normalized;
         if (Vector3.Angle(baseDir, toTarget) > assistMaxAngle) return baseDir; // off-view -> no warp
         return Vector3.Slerp(baseDir, toTarget, Mathf.Clamp01(assistStrength)).normalized;
     }

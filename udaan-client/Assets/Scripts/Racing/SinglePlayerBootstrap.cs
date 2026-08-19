@@ -110,12 +110,15 @@ public class SinglePlayerBootstrap : MonoBehaviour
     {
         if (drone == null || dronePrefab == null) return;
         var md = new GameObject("MissionDirector").AddComponent<MissionDirector>();
+        md.difficulty = GameConfig.Difficulty;   // set by the start menu
         md.enemyPrefab = dronePrefab;
         md.arenaCenter = ArenaBounds.Center;
         md.spawnRadius = Mathf.Min(enemySpawnDistance, arenaRadius * 0.85f);
         md.spawnHeight = 12f;
         md.player = drone.GetComponent<TargetHealth>();
         md.enemyColor = enemyColor;
+
+        new GameObject("HitPops").AddComponent<HitPops>();   // floating hit feedback on the player's shots
     }
 
     private void SpawnPickups()

@@ -25,7 +25,14 @@ public static class CombatSpawner
         th.targetPriority = boss ? 2 : 1;
         th.respawnOnDeath = false;
 
-        Tint(e, color);
+        // Give each faction its own body (enemy bot / ally / boss octacopter) if models are assigned.
+        var model = FactionVisuals.ModelFor(team, boss);
+        if (model != null)
+        {
+            AttachSkin(e, model, FactionVisuals.ScaleFor(team, boss), FactionVisuals.EulerFor(team, boss));
+            if (!boss) Tint(e, color);   // tint enemy/ally for team readability; boss keeps its native purple
+        }
+        else Tint(e, color);             // greybox fallback (no faction models wired)
 
         e.AddComponent<EnemyDroneAI>(); // strips player camera/HUD, configures targeting/weapon for AI
 
@@ -41,6 +48,7 @@ public static class CombatSpawner
                 ai.turnGain = 3.6f;         // tracks harder
                 ai.evadeHealthFraction = 0.15f; // presses the attack longer
             }
+            e.AddComponent<BossController>();   // entrance laugh + slime-thrower + shockwave specials
         }
         return e;
     }
@@ -59,6 +67,19 @@ public static class CombatSpawner
             if (MissionStats.Active != null) MissionStats.Active.alliesSpawned++;
         }
         return a;
+    }
+
+    // Replace the greybox/player visual with a faction model (visual only — colliders/scripts stay on the prefab).
+    private static void AttachSkin(GameObject e, GameObject model, float scale, Vector3 euler)
+    {
+        foreach (var mr in e.GetComponentsInChildren<MeshRenderer>(true)) mr.enabled = false;   // hide existing visual
+        var skin = Object.Instantiate(model);
+        skin.name = "Skin";
+        skin.transform.SetParent(e.transform, false);
+        skin.transform.localPosition = Vector3.zero;
+        skin.transform.localRotation = Quaternion.Euler(euler);
+        skin.transform.localScale = Vector3.one * scale;
+        foreach (var c in skin.GetComponentsInChildren<Collider>()) Object.Destroy(c);           // visual only, no physics
     }
 
     private static void Tint(GameObject go, Color c)

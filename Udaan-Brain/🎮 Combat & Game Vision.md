@@ -1,9 +1,11 @@
 ---
 type: design
-status: active
+status: superseded
 updated: 2026-07-06
-tags: [vision, combat, moba, single-player, ai, reference, demo, core-loop]
+tags: [vision, combat, moba, legacy, pre-pivot, reference]
 ---
+
+> ⚠️ **SUPERSEDED / PRE-PIVOT.** This was the old north-star (adult PvP/MOBA-style combat). Udaan is now a **kids 5–10 build-and-play** game — see **`Game-Design-Document.md`** (source of truth) and `UDAAN_ROUTER.md`. Kept only for still-valid reasoning: aim-assist / soft lock-on and the "AI is just another input source" architecture.
 
 # 🎮 Combat & Game Vision (brainstorm)
 
